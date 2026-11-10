@@ -1,0 +1,44 @@
+name: preview
+
+# Preview builds of the working branch. Publishes a rolling PRE-release under the tag "preview";
+# the shipped "latest" release (built from main by build.yml) is never touched.
+on:
+  push:
+    branches: [next]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: preview
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk ima-al-hakav-preview.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ima-al-hakav-preview
+          path: ima-al-hakav-preview.apk
+      - name: Publish rolling pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete preview --yes --cleanup-tag || true
+          gh release create preview ima-al-hakav-preview.apk \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "Preview build" \
+            --notes "Preview 0.2.0 from ${GITHUB_REF_NAME} at ${GITHUB_SHA} (run ${GITHUB_RUN_NUMBER}). Not the shipped build."

@@ -12,8 +12,10 @@ android {
         applicationId 'com.wizzcraft.ima'
         minSdk 30
         targetSdk 35
-        versionCode runNumber
-        versionName "0.1." + runNumber
+        // Each workflow counts its runs from 1; the offset keeps every new build installable over
+        // the builds already on phones (0.1.x used the bare run number).
+        versionCode 1000 + runNumber
+        versionName "0.2.0-preview"
     }
 
     signingConfigs {
