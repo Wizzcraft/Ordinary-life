@@ -65,6 +65,13 @@ fi
 adb shell dumpsys display 2>/dev/null | grep -o 'DisplayCutout{[^}]*}' | head -1 | sed 's/^/cutout: /' >> "$OUT/device.txt"
 cat "$OUT/device.txt"
 
+# A busy emulator can make the launcher or System UI miss a deadline; their "isn't responding"
+# dialogs would sit on top of our screenshots. Hide them: our own ANRs are still caught from logcat.
+adb shell settings put global hide_error_dialogs 1
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell input keyevent KEYCODE_HOME
+sleep 8
+
 adb install -r -g "$APK" > "$OUT/install.txt" 2>&1 || fail "install failed: $(tail -1 "$OUT/install.txt")"
 adb shell pm clear $PKG > /dev/null 2>&1 || true
 
@@ -76,8 +83,8 @@ sleep 1
 # ---------- 1. the tour ----------
 say "== tour '$TOUR'"
 adb shell am start -W -n "$ACT" --es tour "$TOUR" > "$OUT/am-start.txt" 2>&1
-sleep 1
 adb shell dumpsys gfxinfo $PKG reset > /dev/null 2>&1 || true
+shot "launch-title"
 TS=$(date +%s)
 LAST=""
 LASTSHOT=0
@@ -111,6 +118,7 @@ grep -E 'Total frames rendered|Janky frames|percentile|Number Missed Vsync|Numbe
 say "== save and resume"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
+say "focus after HOME: $(adb shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/^ *//')"
 adb shell run-as $PKG cat shared_prefs/save.xml > "$OUT/save-after-tour.xml" 2>/dev/null || true
 grep -q 'started=true' "$OUT/save-after-tour.xml" && say "save written: $(grep -o 'day=[0-9]*;minute=[0-9.]*' "$OUT/save-after-tour.xml" | head -1), $(grep -o 'scr=[a-z]*' "$OUT/save-after-tour.xml" | head -1)" \
   || fail "no save after going home"
@@ -128,6 +136,9 @@ shot "resume-warm"
 alive || fail "app not running after warm resume"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
+say "focus after HOME: $(adb shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' | sed 's/^ *//')"
+adb shell run-as $PKG cat shared_prefs/save.xml > "$OUT/save-before-kill.xml" 2>/dev/null || true
+say "save before kill: $(grep -o 'day=[0-9]*;minute=[0-9.]*' "$OUT/save-before-kill.xml" | head -1)"
 adb shell am kill $PKG
 sleep 1
 if alive; then say "am kill left the process alive; force-stopping"; adb shell am force-stop $PKG; sleep 1; fi
@@ -142,12 +153,16 @@ shot "back-to-title"
 
 # ---------- 3. monkey ----------
 say "== monkey: $MONKEY_EVENTS events, seed $MONKEY_SEED"
-adb shell monkey -p $PKG -s "$MONKEY_SEED" --throttle 20 --pct-syskeys 2 --pct-appswitch 1 -v "$MONKEY_EVENTS" \
+# System apps may crash under monkey on an emulator (seen: System UI's screenshot animation);
+# keep going and judge only our own package.
+adb shell monkey -p $PKG -s "$MONKEY_SEED" --throttle 20 --pct-syskeys 1 --pct-appswitch 1 \
+  --ignore-crashes --ignore-timeouts --ignore-security-exceptions -v "$MONKEY_EVENTS" \
   > "$OUT/monkey.txt" 2>&1
 MRC=$?
 tail -3 "$OUT/monkey.txt" | sed 's/^/  /' | tee -a "$SUMMARY"
-grep -q '// CRASH' "$OUT/monkey.txt" && fail "monkey: crash"
-grep -q 'NOT RESPONDING' "$OUT/monkey.txt" && fail "monkey: ANR"
+grep -q "// CRASH: $PKG" "$OUT/monkey.txt" && fail "monkey: crash in $PKG"
+grep -q "NOT RESPONDING: $PKG" "$OUT/monkey.txt" && fail "monkey: ANR in $PKG"
+grep -o '// CRASH: [^ ]*' "$OUT/monkey.txt" | grep -v "$PKG" | sort -u | sed 's/^/  (ignored, not ours) /' | tee -a "$SUMMARY"
 grep -q 'Monkey finished' "$OUT/monkey.txt" || fail "monkey did not finish (exit $MRC)"
 adb shell am start -W -n "$ACT" > /dev/null 2>&1
 sleep 2

@@ -61,7 +61,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ env.API_LEVEL }}-${{ env.TARGET }}-${{ env.ARCH }}-${{ env.PROFILE }}-v1
+          key: avd-${{ env.API_LEVEL }}-${{ env.TARGET }}-${{ env.ARCH }}-${{ env.PROFILE }}-c4-v2
 
       - name: Create AVD and snapshot for the cache
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -72,6 +72,8 @@ jobs:
           arch: ${{ env.ARCH }}
           profile: ${{ env.PROFILE }}
           force-avd-creation: false
+          cores: 4
+          ram-size: 4096M
           emulator-options: ${{ env.EMU_OPTS }}
           disable-animations: false
           script: echo "AVD snapshot generated"
@@ -87,6 +89,8 @@ jobs:
           arch: ${{ env.ARCH }}
           profile: ${{ env.PROFILE }}
           force-avd-creation: false
+          cores: 4
+          ram-size: 4096M
           emulator-options: -no-snapshot-save ${{ env.EMU_OPTS }}
           disable-animations: true
           script: bash tools/device/lab.sh app/build/outputs/apk/debug/app-debug.apk lab-out
