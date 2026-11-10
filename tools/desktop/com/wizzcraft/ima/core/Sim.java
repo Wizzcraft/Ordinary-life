@@ -15,12 +15,16 @@ import java.util.TreeMap;
 import javax.imageio.ImageIO;
 
 /**
- * Off-device test harness: drives the real game core with scripted taps, saves screenshots at both
- * supported heights, checks the engine piece by piece, plays 30-day bots and runs a random-tap soak.
+ * Off-device test harness: drives the real game core with scripted taps, checks the engine piece by
+ * piece, plays 30-day bots and runs a random-touch soak with reloads.
  *
- *   java -Djava.awt.headless=true -cp OUT com.wizzcraft.ima.core.Sim outDir [test,test,...]
+ *   java -Djava.awt.headless=true -cp OUT com.wizzcraft.ima.core.Sim outDir [group,group,...] [--shots] [--soak=FRAMES]
  *
- * Without a test list everything runs and the last line is "ALL OK"; any failed check throws.
+ * Without a group list everything runs and the last line is "ALL OK"; any failed check prints
+ * "FAILED: ..." as the last line and exits with code 1. This default is the gate mode: no pictures
+ * are rendered, so it stays well under a minute on a loaded machine. --shots also photographs every
+ * screen at both supported heights (outDir/shots, outDir/sheets) and lets the real renderer draw a
+ * frame now and then; --soak sets the length of the random-touch run.
  */
 public final class Sim {
     static final float DT = 1f / 30f;
@@ -28,19 +32,47 @@ public final class Sim {
     static float lh = 760;
     static Game g;
     static final CountGfx gfx = new CountGfx();
-    static final AwtGfx real = new AwtGfx(36, 76, 0.1f);
+    /** The Java2D renderer, created only when pictures were asked for. */
+    static AwtGfx real;
     /** Sounds polled since the last heard.clear(), the way the shell polls them every frame. */
     static final BitSet heard = new BitSet();
     static String out;
-    static int checks, frameNo;
+    static boolean pictures;
+    static int checks, frameNo, soak = 200_000;
 
     interface Test {
         void run() throws Exception;
     }
 
-    public static void main(String[] args) throws Exception {
-        out = args.length > 0 ? args[0] : "tools/out";
-        Set<String> only = args.length > 1 ? new HashSet<>(Arrays.asList(args[1].split(","))) : null;
+    public static void main(String[] args) {
+        long t0 = System.nanoTime();
+        try {
+            all(args);
+        } catch (Throwable t) {
+            // The gate reads the last line and the exit code; the trace goes above them.
+            t.printStackTrace(System.out);
+            String what = String.valueOf(t.getMessage());
+            System.out.println(what.startsWith("FAILED") ? what : "FAILED: " + t);
+            System.exit(1);
+        }
+        System.out.printf("%d checks passed in %.1fs%n", checks, (System.nanoTime() - t0) / 1e9);
+        System.out.println(only == null ? "ALL OK" : "SUBSET OK " + only);
+    }
+
+    static Set<String> only;
+
+    static void all(String[] args) throws Exception {
+        out = "tools/out";
+        boolean named = false;
+        for (String a : args) {
+            if (a.equals("--shots")) pictures = true;
+            else if (a.startsWith("--soak=")) soak = Integer.parseInt(a.substring(7));
+            else if (!named) {
+                out = a;
+                named = true;
+            } else only = new HashSet<>(Arrays.asList(a.split(",")));
+        }
+        if (pictures) real = new AwtGfx(36, 76, 0.1f);
         run(only, "unregistered", Sim::unregistered);
         // From here on the alley, the two street events and the waiter are played by test Minis.
         Minis.register("alley", TestVenue::new);
@@ -78,9 +110,7 @@ public final class Sim {
             bot(30, 0.75f, 1);
             bot(30, 0.35f, 2);
         });
-        run(only, "monkey", () -> monkey(420_000, 7));
-        System.out.println(checks + " checks passed");
-        System.out.println(only == null ? "ALL OK" : "SUBSET OK " + only);
+        run(only, "monkey", () -> monkey(soak, 7));
     }
 
     static void run(Set<String> only, String name, Test t) throws Exception {
@@ -341,8 +371,8 @@ public final class Sim {
         gfx.reset();
         g.draw(gfx);
         check(gfx.dx == 0 && gfx.dy == 0, "a frame hands the surface back unshifted");
-        // Now and then the real renderer draws the frame too.
-        if (++frameNo % 257 == 0) g.draw(real);
+        // With pictures on, the real renderer draws a frame now and then too.
+        if (real != null && ++frameNo % 257 == 0) g.draw(real);
         for (int id = g.pollSound(); id >= 0; id = g.pollSound()) heard.set(id);
     }
 
@@ -521,6 +551,7 @@ public final class Sim {
 
     static void shot(String name) throws Exception {
         frame();
+        if (!pictures) return;
         AwtGfx big = new AwtGfx(720, (int) (lh * 2), 2f);
         g.draw(big);
         String path = out + "/shots/" + (int) lh + "/" + name + ".png";
@@ -530,6 +561,7 @@ public final class Sim {
 
     /** Tiles the screenshots taken so far, six to a sheet, so a whole tour can be looked at quickly. */
     static void sheets(String prefix) throws Exception {
+        if (!pictures) return;
         int cols = 3, rows = 2, cw = 480, ch = Math.round(lh * 480 / 360);
         for (int first = 0, n = 1; first < shots.size(); first += cols * rows, n++) {
             BufferedImage sheet = new BufferedImage(cols * (cw + 12) + 12, rows * (ch + 12) + 12, BufferedImage.TYPE_INT_RGB);
@@ -2095,7 +2127,7 @@ public final class Sim {
             closeDialogs();
             if (g.day != lastDay) {
                 lastDay = g.day;
-                System.out.printf("  day %2d %s money=%5d food=%3.0f water=%3.0f energy=%3.0f bag=%d/%d debt=%d rank=%d fit=%.1f%n",
+                if (pictures) System.out.printf("  day %2d %s money=%5d food=%3.0f water=%3.0f energy=%3.0f bag=%d/%d debt=%d rank=%d fit=%.1f%n",
                         g.day, Ui.clock(g.minute), g.money, g.food, g.water, g.energy, g.meals, g.bottles, g.rentDebt,
                         g.rank(Job.COOK), g.stat(Host.FIT));
             }
@@ -2162,15 +2194,18 @@ public final class Sim {
                     new String[]{"יופי.", "ידעתי."}, new String[]{"יופי.", "ידעתי."}, new String[]{"mom.trust+=3", "lie.count+=1;mom.worry+=8;food-=20"}),
     };
 
-    /** Drops the running game into a random corner of the engine, so the soak reaches every screen. */
-    static void jump(Random r) {
+    /**
+     * Drops the running game into a corner of the engine, so the soak reaches every screen. The
+     * corners come round in turn (n counts the jumps): coverage must not depend on luck.
+     */
+    static void jump(Random r, int n) {
         if (!g.started) {
             g.newGame(r.nextBoolean(), "קוף");
             return;
         }
         if (g.over || g.hasDialog() || g.endPending) return;
         int b = r.nextInt(City.B.length);
-        switch (r.nextInt(12)) {
+        switch (n % 12) {
             case 0:
             case 1: {
                 Job j = Job.ALL[r.nextInt(Job.ALL.length)];
@@ -2203,15 +2238,13 @@ public final class Sim {
                 g.play(MONKEY_BEATS[r.nextInt(MONKEY_BEATS.length)]);
                 break;
             case 7:
-                enter(City.ALLEY, 23 * 60 + r.nextInt(120));
+                enter(City.ALLEY, (23 * 60 + r.nextInt(120)) % 1440);
                 g.setVar("heat", r.nextInt(120));
                 g.setVar("alley.q" + r.nextInt(4), r.nextInt(9));
                 break;
             case 8:
-                if (r.nextInt(3) == 0) {
-                    g.day = Story.FINAL_DAY - 1;
-                    g.minute = 23 * 60 + 30;
-                }
+                g.day = Story.FINAL_DAY - 1;
+                g.minute = 23 * 60 + 30;
                 break;
             case 9:
                 g.earn(r.nextInt(900));
@@ -2264,10 +2297,7 @@ public final class Sim {
                 check(g.screen.getClass() == was, "monkey: same screen after reload, was " + was.getSimpleName());
                 reloads++;
             }
-            if (r.nextInt(1500) == 0) {
-                jump(r);
-                jumps++;
-            }
+            if (r.nextInt(1500) == 0) jump(r, jumps++);
             if (g.over) {
                 games++;
                 if (!g.endTitle.isEmpty()) yearsEnded++;
