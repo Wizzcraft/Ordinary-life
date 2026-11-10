@@ -15,6 +15,7 @@ public final class GameView extends View {
     private long lastNanos;
     private boolean running = true;
     private float scale = 1f;
+    private float offsetX;
 
     public GameView(Context context) {
         super(context);
@@ -41,6 +42,7 @@ public final class GameView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         int w = getWidth();
+        if (running) postInvalidateOnAnimation();
         if (w <= 0) return;
         long now = System.nanoTime();
         float dt = 0f;
@@ -52,26 +54,27 @@ public final class GameView extends View {
         lastNanos = now;
 
         float usableH = Math.max(1, getHeight() - insetTop - insetBottom);
-        scale = w / Game.W;
+        // Fit the 360-wide layout to the width, but never squeeze it below the minimum height:
+        // on short or wide screens scale by height instead and centre horizontally.
+        scale = Math.min(w / Game.W, usableH / Game.MIN_H);
+        offsetX = (w - Game.W * scale) / 2f;
         float logicalH = usableH / scale;
 
         game.update(dt, logicalH);
 
         canvas.drawColor(0xFF12161C);
         canvas.save();
-        canvas.translate(0, insetTop);
+        canvas.translate(offsetX, insetTop);
         canvas.scale(scale, scale);
         gfx.begin(canvas);
         game.draw(gfx);
         canvas.restore();
-
-        if (running) postInvalidateOnAnimation();
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         float s = scale > 0 ? scale : 1f;
-        float x = e.getX() / s;
+        float x = (e.getX() - offsetX) / s;
         float y = (e.getY() - insetTop) / s;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:

@@ -5,6 +5,8 @@ final class BuildingScreen extends Screen {
     private static final int EXIT = 99, SLEEP8 = 1, NAP = 2, TAP = 3, BUY_MEAL = 10, BUY_WATER = 11,
             ASK_JOB = 20, SHIFT = 21, DINE = 22, BAG_EAT = 30, BAG_DRINK = 31;
     static final int SHIFT_FROM = 8 * 60, SHIFT_TO = 16 * 60;
+    /** A full shift burns 48 energy; don't let anyone start one they can't finish. */
+    static final float MIN_SHIFT_ENERGY = 55;
 
     private final City.Building b;
     private float y;
@@ -48,13 +50,15 @@ final class BuildingScreen extends Screen {
                 row(SLEEP8, "לישון 8 שעות", g.energy < 95, g.energy < 40);
                 row(NAP, "תנומה של שעתיים", g.energy < 95, false);
                 row(TAP, "לשתות מהברז (חינם)", g.water < 95, false);
-                info(c, "שכירות " + Ui.nis(g.rentDue()) + " כל " + Game.DAYS_PER_MONTH + " ימים, יורדת אוטומטית.");
+                info(c, "שכירות " + Ui.nis(Game.RENT) + " כל " + Game.DAYS_PER_MONTH + " ימים, יורדת אוטומטית."
+                        + (g.rentDebt > 0 ? " חוב פתוח: " + Ui.nis(g.rentDebt) + "." : ""));
                 break;
             case City.MARKET:
                 if (open) {
                     row(BUY_MEAL, "ארוחה ארוזה · " + Ui.nis(Game.MEAL_PRICE), g.money >= Game.MEAL_PRICE && g.meals < Game.BAG_MAX, false);
                     row(BUY_WATER, "בקבוק מים · " + Ui.nis(Game.BOTTLE_PRICE), g.money >= Game.BOTTLE_PRICE && g.bottles < Game.BAG_MAX, false);
-                    info(c, "בתיק: " + g.meals + " ארוחות, " + g.bottles + " בקבוקים. נכנסים עד " + Game.BAG_MAX + " מכל סוג.");
+                    info(c, "בתיק: " + Ui.count(g.meals, "ארוחה אחת", "ארוחות") + ", "
+                            + Ui.count(g.bottles, "בקבוק אחד", "בקבוקים") + ". נכנסים עד " + Game.BAG_MAX + " מכל סוג.");
                 } else {
                     info(c, "הסופר סגור. אפשר לחכות בחוץ או לחזור מחר.");
                 }
@@ -92,7 +96,8 @@ final class BuildingScreen extends Screen {
         if (g.minute < SHIFT_FROM || g.minute > SHIFT_TO) {
             return "משמרת אפשר להתחיל בין " + Ui.clock(SHIFT_FROM) + " ל-" + Ui.clock(SHIFT_TO) + ".";
         }
-        if (g.energy < 25) return "אין לך כוח למשמרת. קודם לישון.";
+        if (g.food <= 0 || g.water <= 0) return "על בטן ריקה לא עובדים. קודם לאכול ולשתות.";
+        if (g.energy < MIN_SHIFT_ENERGY) return "אין לך כוח למשמרת שלמה. קודם לישון.";
         return null;
     }
 
@@ -130,21 +135,26 @@ final class BuildingScreen extends Screen {
                 g.drink();
                 break;
             case SLEEP8:
+                if (g.energy >= 95) break;
                 g.screen = new SleepScreen(g, 8);
                 break;
             case NAP:
+                if (g.energy >= 95) break;
                 g.screen = new SleepScreen(g, 2);
                 break;
             case TAP:
+                if (g.water >= 95) break;
                 g.water = Math.min(100, g.water + Game.TAP_WATER);
                 g.toast("שתית מים מהברז");
                 break;
             case BUY_MEAL:
+                if (g.money < Game.MEAL_PRICE || g.meals >= Game.BAG_MAX) break;
                 g.money -= Game.MEAL_PRICE;
                 g.meals++;
                 g.toast("ארוחה נכנסה לתיק");
                 break;
             case BUY_WATER:
+                if (g.money < Game.BOTTLE_PRICE || g.bottles >= Game.BAG_MAX) break;
                 g.money -= Game.BOTTLE_PRICE;
                 g.bottles++;
                 g.toast("בקבוק נכנס לתיק");
@@ -156,9 +166,11 @@ final class BuildingScreen extends Screen {
                         + " ל-" + Ui.clock(SHIFT_TO) + ".");
                 break;
             case SHIFT:
+                if (!g.cookHired || shiftBlock() != null) break;
                 g.screen = new CookGame(g);
                 break;
             case DINE:
+                if (g.money < Game.DINE_PRICE || g.food >= 90) break;
                 g.money -= Game.DINE_PRICE;
                 g.food = Math.min(100, g.food + 70);
                 g.water = Math.min(100, g.water + 20);

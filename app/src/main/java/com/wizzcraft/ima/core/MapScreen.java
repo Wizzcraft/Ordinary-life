@@ -147,7 +147,7 @@ final class MapScreen extends Screen {
         if (walking) {
             float mins = City.length(g.px, g.py, path, pi) / Game.WALK_SPEED;
             int hh = (int) (mins / 60), mm = (int) (mins % 60);
-            status = g.t("הולך אל ", "הולכת אל ") + City.B[target].name + " · עוד "
+            status = g.t("הולך ", "הולכת ") + City.B[target].to + " · עוד "
                     + hh + ":" + (mm < 10 ? "0" : "") + mm + " שעות";
         } else if (g.at >= 0) {
             status = City.B[g.at].name + " · לחיצה על הבניין כדי להיכנס";

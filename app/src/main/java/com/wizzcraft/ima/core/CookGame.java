@@ -17,12 +17,11 @@ final class CookGame extends Screen {
     private final int[] results = new int[ROUNDS];
     private float pos, dir = 1, zc, zw, speed, timer, t;
     private int pay;
-    private boolean tired;
+    private boolean tired, sentHome;
     private final Random rnd = new Random();
 
     CookGame(Game g) {
         super(g);
-        g.lastShiftDay = g.day;
     }
 
     boolean playing() {
@@ -35,6 +34,8 @@ final class CookGame extends Screen {
     }
 
     private void startRound() {
+        // The shift only counts as today's once the first dish is on the fire.
+        if (round == 0) g.lastShiftDay = g.day;
         tired = g.energy < 30;
         zw = 0.14f - round * 0.008f;
         zc = 0.2f + rnd.nextFloat() * 0.6f;
@@ -62,6 +63,14 @@ final class CookGame extends Screen {
         } else if (state == SHOW) {
             timer -= dt;
             if (timer <= 0) {
+                // Out of strength: the manager sends you home instead of letting you drop.
+                float nextHour = (g.food <= 0 || g.water <= 0) ? 18 : 6;
+                if (g.energy - nextHour < 2) {
+                    sentHome = true;
+                    state = DONE;
+                    g.shiftsDone++;
+                    return;
+                }
                 g.advance(60, Game.WORK);
                 if (g.screen != this) return;
                 round++;
@@ -113,17 +122,19 @@ final class CookGame extends Screen {
             btns.add(new Btn(0, 40, y + 14, 280, 54, "מתחילים", true, true));
         } else if (state == DONE) {
             int perfect = 0, ok = 0, burnt = 0;
-            for (int r : results) {
-                if (r == PERFECT) perfect++;
-                else if (r == OK) ok++;
+            int cooked = sentHome ? round + 1 : ROUNDS;
+            for (int i = 0; i < cooked; i++) {
+                if (results[i] == PERFECT) perfect++;
+                else if (results[i] == OK) ok++;
                 else burnt++;
             }
             float y = h * 0.34f;
-            c.text("סוף משמרת", Game.W / 2, y, 20, Ui.DIM, Gfx.CENTER);
+            c.text(sentHome ? "נגמר לך הכוח, המנהל שלח אותך הביתה" : "סוף משמרת", Game.W / 2, y,
+                    sentHome ? 15 : 20, sentHome ? Ui.BAD : Ui.DIM, Gfx.CENTER);
             c.text(Ui.nis(pay), Game.W / 2, y + 62, 54, Ui.ACCENT, Gfx.CENTER);
             c.text("מושלמות: " + perfect + " · טובות: " + ok + " · שרופות: " + burnt, Game.W / 2, y + 100, 15,
                     Ui.INK, Gfx.CENTER);
-            drawDots(c, y + 126, ROUNDS);
+            drawDots(c, y + 126, cooked);
             btns.add(new Btn(0, 40, y + 160, 280, 54, "המשך", true, true));
         } else {
             c.text("מנה " + (round + 1) + " מתוך " + ROUNDS, Game.W / 2, top + 26, 14, Ui.DIM, Gfx.CENTER);
@@ -140,7 +151,7 @@ final class CookGame extends Screen {
 
             if (state == SHOW) {
                 int r = results[round];
-                String msg = r == PERFECT ? "מושלם!" : r == OK ? "טוב" : "נשרף...";
+                String msg = r == PERFECT ? "מושלמת!" : r == OK ? "טובה" : "נשרפה...";
                 int col = r == PERFECT ? Ui.ACCENT : r == OK ? Ui.GOOD : Ui.BAD;
                 c.text(msg, Game.W / 2, barY + 84, 30, col, Gfx.CENTER);
             } else {
@@ -176,6 +187,8 @@ final class CookGame extends Screen {
 
     @Override
     boolean back() {
+        // Leaving is only possible before the first dish; after that the shift has to be finished.
+        if (state == INTRO) g.screen = new BuildingScreen(g, City.RESTAURANT);
         return true;
     }
 }

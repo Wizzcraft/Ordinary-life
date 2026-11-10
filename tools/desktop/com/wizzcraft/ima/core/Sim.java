@@ -21,6 +21,7 @@ public final class Sim {
         bot(30, 0.35f, 2);
         monkey(400_000, 7);
         saveLoad();
+        regressions();
         System.out.println("ALL OK");
     }
 
@@ -216,7 +217,7 @@ public final class Sim {
                 if (g.water < 50) tapLabel("לשתות (");
             }
             boolean needShop = (g.meals < 2 || g.bottles < 1) && g.money >= 60;
-            boolean canWork = g.cookHired ? (g.lastShiftDay != g.day && g.minute >= 8 * 60 && g.minute <= 14 * 60 && g.energy >= 45)
+            boolean canWork = g.cookHired ? (g.lastShiftDay != g.day && g.minute >= 8 * 60 && g.minute <= 14 * 60 && g.energy >= 55)
                     : (g.minute >= 8 * 60 && g.minute < 23 * 60);
             if (canWork) {
                 if (!goTo(City.RESTAURANT)) continue;
@@ -314,6 +315,71 @@ public final class Sim {
         g3.load(null);
         g3.load("");
         System.out.println("save/load ok: " + s);
+    }
+
+    /** Cases found in review; each one used to go wrong. */
+    static void regressions() {
+        // A shift can't be started without the energy to finish it.
+        fresh();
+        check(goTo(City.RESTAURANT), "reg: at restaurant");
+        tapLabel("לבקש עבודה");
+        closeDialogs();
+        g.minute = 9 * 60;
+        g.energy = 30;
+        check(!tapLabel("להתחיל משמרת"), "reg: shift blocked at low energy");
+        g.energy = 90;
+        g.food = 0;
+        check(!tapLabel("להתחיל משמרת"), "reg: shift blocked when starving");
+
+        // Leaving the intro (or saving on it) doesn't burn today's shift.
+        g.food = 80;
+        check(tapLabel("להתחיל משמרת"), "reg: shift starts");
+        check(g.screen instanceof CookGame && g.lastShiftDay != g.day, "reg: intro doesn't count as a shift");
+        g.back();
+        check(g.screen instanceof BuildingScreen, "reg: back leaves the intro");
+
+        // Running out of strength mid-shift sends you home; no collapse, no ambulance bill.
+        check(tapLabel("להתחיל משמרת"), "reg: shift starts again");
+        tapLabel("מתחילים");
+        int before = g.money, day = g.day;
+        g.energy = 20;
+        for (int i = 0; i < 30 * 60 && g.screen instanceof CookGame && ((CookGame) g.screen).btns.isEmpty(); i++) {
+            frame();
+            if (i % 20 == 0) {
+                g.down(180, 500);
+                g.up(180, 500);
+            }
+        }
+        check(g.screen instanceof CookGame && !g.hasDialog() && g.day == day && g.money >= before && g.energy > 0,
+                "reg: sent home instead of collapsing");
+        tapLabel("המשך");
+
+        // Several taps between two frames can't overfill the bag or overdraw the wallet.
+        fresh();
+        check(goTo(City.MARKET), "reg: at market");
+        g.money = 70;
+        g.meals = Game.BAG_MAX - 1;
+        frame();
+        Btn buy = null;
+        for (Btn b : g.screen.btns) if (b.label.startsWith("ארוחה ארוזה")) buy = b;
+        check(buy != null, "reg: buy button exists");
+        for (int i = 0; i < 5; i++) g.down(buy.x + 5, buy.y + 5);
+        check(g.meals == Game.BAG_MAX && g.money == 70 - Game.MEAL_PRICE, "reg: multi-tap buy is clamped");
+
+        // Game over wipes any queued dialog.
+        fresh();
+        g.dialog("x", "y");
+        g.end("בדיקה");
+        check(!g.hasDialog() && g.screen instanceof EndScreen, "reg: no dialog over the end screen");
+        System.out.println("regressions ok");
+    }
+
+    static void fresh() {
+        g = new Game();
+        gfx = new AwtGfx(36, 76, 0.1f);
+        frame();
+        tapLabel("גבר");
+        closeDialogs();
     }
 
     static void check(boolean ok, String what) {

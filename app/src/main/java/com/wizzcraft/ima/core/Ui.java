@@ -27,6 +27,11 @@ final class Ui {
         return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
     }
 
+    /** "ארוחה אחת" / "3 ארוחות". */
+    static String count(int n, String one, String many) {
+        return n == 1 ? one : n + " " + many;
+    }
+
     static String nis(int v) {
         return v < 0 ? "-₪" + (-v) : "₪" + v;
     }

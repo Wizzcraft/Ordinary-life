@@ -9,6 +9,8 @@ import java.util.HashMap;
  */
 public final class Game {
     public static final float W = 360;
+    /** The layout needs at least this much logical height. */
+    public static final float MIN_H = 560;
     static final float HUD_H = 92;
 
     // ---- tuning ----
@@ -54,7 +56,7 @@ public final class Game {
     // ================= public API for the shell =================
 
     public void update(float dt, float logicalHeight) {
-        h = Math.max(560, logicalHeight);
+        h = Math.max(MIN_H, logicalHeight);
         blink += dt;
         if (toastT > 0) toastT -= dt;
         if (!dialogs.isEmpty()) return;
@@ -239,7 +241,7 @@ public final class Game {
 
     private void collapse() {
         money -= AMBULANCE;
-        dialog("התעלפת", "הגוף אמר די. התעוררת בדירה למחרת בבוקר, ואמבולנס עלה לך "
+        dialog("התעלפת", "הגוף אמר די. התעוררת בדירה בשמונה בבוקר, ואמבולנס עלה לך "
                 + Ui.nis(AMBULANCE) + ". לאכול, לשתות ולישון זה לא מותרות.");
         City.Building home = City.B[City.HOME];
         px = home.doorX;
@@ -260,6 +262,7 @@ public final class Game {
 
     void end(String reason) {
         over = true;
+        dialogs.clear();
         endReason = reason;
         screen = new EndScreen(this);
     }

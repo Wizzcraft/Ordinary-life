@@ -21,7 +21,8 @@ final class SleepScreen extends Screen {
         if (g.screen != this) return;
         if (left <= 0) {
             g.screen = new BuildingScreen(g, City.HOME);
-            g.toast(g.energy > 70 ? "בוקר טוב" : g.t("התעוררת עייף", "התעוררת עייפה"));
+            boolean morning = g.minute >= 5 * 60 && g.minute < 12 * 60;
+            g.toast(g.energy <= 70 ? g.t("התעוררת עייף", "התעוררת עייפה") : morning ? "בוקר טוב" : "התעוררת");
         }
     }
 

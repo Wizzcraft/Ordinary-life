@@ -13,7 +13,8 @@ final class EndScreen extends Screen {
         c.text("המשחק נגמר", Game.W / 2, y, 34, Ui.BAD, Gfx.CENTER);
         y = Ui.paragraph(c, g.endReason, Game.W / 2, y + 44, 300, 16, Ui.INK);
         y += 18;
-        c.text("החזקת מעמד " + g.day + " ימים", Game.W / 2, y, 15, Ui.DIM, Gfx.CENTER);
+        c.text("החזקת מעמד " + Ui.count(Math.max(1, g.day - 1), "יום אחד", "ימים"), Game.W / 2, y, 15, Ui.DIM,
+                Gfx.CENTER);
         c.text("משמרות שעבדת: " + g.shiftsDone, Game.W / 2, y + 24, 15, Ui.DIM, Gfx.CENTER);
         btns.clear();
         btns.add(new Btn(0, 40, y + 56, 280, 54, "משחק חדש", true, true));
