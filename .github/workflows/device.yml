@@ -102,6 +102,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cat lab-out/summary.txt 2>/dev/null || true
 
+      # For readers who can reach the job log but not artifact storage (some agent sandboxes):
+      # the text results, and every screenshot as base64 between markers. See docs/DEVICE_LAB.md.
+      - name: Export results to the log
+        if: always() && vars.LAB_LOG_EXPORT != 'false'
+        run: bash tools/device/export-log.sh lab-out
+
       - name: Upload screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
