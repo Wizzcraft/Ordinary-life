@@ -67,6 +67,7 @@ final class NameScreen extends Screen {
     void down(float x, float y) {
         Btn b = hit(x, y);
         if (b == null) return;
+        g.sfx(Sfx.TAP);
         if (b.id == OK) {
             if (!name.trim().isEmpty()) g.newGame(female, name.trim());
         } else if (b.id == DEL) {
@@ -85,6 +86,11 @@ final class NameScreen extends Screen {
     }
 
     @Override
+    boolean inGame() {
+        return false;
+    }
+
+    @Override
     String kind() {
         return "name";
     }
@@ -93,5 +99,12 @@ final class NameScreen extends Screen {
     void save(StringBuilder sb) {
         Game.put(sb, "nf", female);
         Game.put(sb, "nn", Game.esc(name));
+    }
+
+    static Screen restore(Game g, java.util.HashMap<String, String> m) {
+        NameScreen ns = new NameScreen(g, Boolean.parseBoolean(m.get("nf")));
+        String typed = Game.strOf(m, "nn");
+        ns.name = typed.length() > MAX_LEN ? typed.substring(0, MAX_LEN) : typed;
+        return ns;
     }
 }

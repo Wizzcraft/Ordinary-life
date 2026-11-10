@@ -65,6 +65,12 @@ final class TitleScreen extends Screen {
             confirm = 0;
             return;
         }
+        g.sfx(Sfx.TAP);
+        if (b.id == STORE) {
+            confirm = 0;
+            g.screen = new StoreScreen(g, StoreScreen.FROM_TITLE);
+            return;
+        }
         if (b.id == 0) {
             g.screen = new MapScreen(g);
             return;
@@ -74,6 +80,23 @@ final class TitleScreen extends Screen {
             return;
         }
         g.screen = new NameScreen(g, b.id == 2);
+    }
+
+    private static final int STORE = 9;
+
+    /**
+     * The store button joins the title's buttons here rather than in draw(), which belongs to the
+     * artists: it sits in the free strip between the gender buttons and the version line.
+     */
+    @Override
+    void drawButtons(Gfx c) {
+        btns.add(new Btn(STORE, 110, g.h - 78, 140, 44, "חנות", true, false));
+        super.drawButtons(c);
+    }
+
+    @Override
+    boolean inGame() {
+        return false;
     }
 
     @Override
