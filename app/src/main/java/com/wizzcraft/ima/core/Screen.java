@@ -17,6 +17,17 @@ abstract class Screen {
 
     abstract void draw(Gfx c);
 
+    /** Short name stored in the save so the app can reopen on this screen. */
+    abstract String kind();
+
+    /** Appends this screen's own state to the save. */
+    void save(StringBuilder sb) {
+    }
+
+    /** The app is going to the background. */
+    void onAppPause() {
+    }
+
     void down(float x, float y) {
     }
 

@@ -45,7 +45,7 @@ final class TitleScreen extends Screen {
         float y = base + 26;
         boolean canContinue = g.started && !g.over;
         if (canContinue) {
-            btns.add(new Btn(0, 40, y, 280, 54, "המשך (יום " + g.day + ")", true, true));
+            btns.add(new Btn(0, 40, y, 280, 54, "המשך · " + (g.name.isEmpty() ? "" : g.name + ", ") + "יום " + g.day, true, true));
             y += 68;
         }
         c.text(confirm != 0 ? "לחיצה נוספת תמחק את המשחק השמור" : "משחק חדש", Game.W / 2, y + 12, 13,
@@ -73,6 +73,11 @@ final class TitleScreen extends Screen {
             confirm = b.id;
             return;
         }
-        g.newGame(b.id == 2);
+        g.screen = new NameScreen(g, b.id == 2);
+    }
+
+    @Override
+    String kind() {
+        return "title";
     }
 }

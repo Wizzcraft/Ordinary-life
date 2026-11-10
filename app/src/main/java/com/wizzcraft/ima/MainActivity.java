@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         view.pause();
+        view.game.onAppPause();
         try {
             getSharedPreferences("save", MODE_PRIVATE).edit()
                     .putString("state", view.game.save()).apply();

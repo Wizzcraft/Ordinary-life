@@ -21,6 +21,8 @@ public final class Game {
     static final float WALK_SPEED = 3f;
     static final int RENT = 900, RENT_FINE = 100, START_MONEY = 400;
     static final int MEAL_PRICE = 30, BOTTLE_PRICE = 8, DINE_PRICE = 45, BAG_MAX = 4, AMBULANCE = 150;
+    /** What the employer's food and drink give back per hour of work. */
+    static final float WORK_FOOD_PER_HOUR = 4, WORK_WATER_PER_HOUR = 5;
     static final float MEAL_FOOD = 45, BOTTLE_WATER = 50, TAP_WATER = 40, SLEEP_PER_HOUR = 11;
 
     static final int IDLE = 0, WALK = 1, WORK = 2, SLEEP = 3;
@@ -30,6 +32,8 @@ public final class Game {
 
     // ---- saved state ----
     boolean started, female, over;
+    /** The player's name as typed at the start; empty in saves from before names existed. */
+    String name = "";
     int money, day;
     float minute;
     float food, water, energy;
@@ -99,6 +103,11 @@ public final class Game {
 
     // ================= helpers =================
 
+    /** "דנה, " when the player has a name, so a sentence can open by addressing them. */
+    String hey() {
+        return name.isEmpty() ? "" : name + ", ";
+    }
+
     /** Picks the masculine or feminine form. */
     String t(String m, String f) {
         return female ? f : m;
@@ -127,8 +136,9 @@ public final class Game {
 
     // ================= simulation =================
 
-    void newGame(boolean female) {
+    void newGame(boolean female, String name) {
         this.female = female;
+        this.name = name;
         started = true;
         over = false;
         money = START_MONEY;
@@ -150,7 +160,7 @@ public final class Game {
         py = home.doorY;
         at = City.HOME;
         dialogs.clear();
-        dialog("אמא על הקו", "נו, הגעת? מצאת את הדירה? אכלת משהו? שמתי לך סנדוויץ' ובקבוק מים בתיק.");
+        dialog("אמא על הקו", "נו, " + hey() + "הגעת? מצאת את הדירה? אכלת משהו? שמתי לך סנדוויץ' ובקבוק מים בתיק.");
         dialog("אמא על הקו", "שכירות משלמים כל " + DAYS_PER_MONTH + " ימים, " + Ui.nis(RENT) + ". "
                 + t("תמצא עבודה ואל תעשה", "תמצאי עבודה ואל תעשי")
                 + " לנו בושות. בסוף השנה אנחנו באים לבקר!");
@@ -171,8 +181,9 @@ public final class Game {
                 energyRate = -SLEEP_PER_HOUR;
                 break;
             case WORK:
-                // Staff drink for free on shift, so thirst barely builds up at work.
-                waterRate = 3f;
+                // The employer feeds you on shift: food and water go up instead of down.
+                foodRate = -WORK_FOOD_PER_HOUR;
+                waterRate = -WORK_WATER_PER_HOUR;
                 energyRate = 6f;
                 break;
             case WALK:
@@ -182,7 +193,7 @@ public final class Game {
             default:
                 energyRate = 3f;
         }
-        if (activity != SLEEP && (food <= 0 || water <= 0)) energyRate *= 3;
+        if (activity != SLEEP && activity != WORK && (food <= 0 || water <= 0)) energyRate *= 3;
         food = Ui.clamp(food - foodRate * hrs, 0, 100);
         water = Ui.clamp(water - waterRate * hrs, 0, 100);
         energy = Ui.clamp(energy - energyRate * hrs, 0, 100);
@@ -226,15 +237,15 @@ public final class Game {
         if (food < 30 || money < 40) {
             int add = Math.min(2, BAG_MAX - meals);
             meals += add;
-            body = "אכלת משהו היום? " + t("אתה נשמע לי חלש", "את נשמעת לי חלשה") + ". "
+            body = hey() + "אכלת משהו היום? " + t("אתה נשמע לי חלש", "את נשמעת לי חלשה") + ". "
                     + (add > 0 ? "שלחתי לך קופסאות עם אוכל, שלא יגידו שאני לא דואגת."
                     : "תאכל" + t("", "י") + " את מה שיש לך בתיק!");
         } else if (!cookHired) {
-            body = "נו, מצאת כבר עבודה? הבן של רותי כבר מנהל סניף. רק אומרת.";
+            body = "נו, " + hey() + "מצאת כבר עבודה? הבן של רותי כבר מנהל סניף. רק אומרת.";
         } else if (money > 1500) {
-            body = "שמעתי ש" + t("אתה מסתדר", "את מסתדרת") + " יפה. אבא שואל אם יש שם חדר אורחים.";
+            body = hey() + "שמעתי ש" + t("אתה מסתדר", "את מסתדרת") + " יפה. אבא שואל אם יש שם חדר אורחים.";
         } else {
-            body = "העיקר ש" + t("אתה עובד", "את עובדת") + ". אבל מטבח? חשבת אולי ללמוד משהו?";
+            body = hey() + "העיקר ש" + t("אתה עובד", "את עובדת") + ". אבל מטבח? חשבת אולי ללמוד משהו?";
         }
         dialog("אמא על הקו", body);
     }
@@ -333,11 +344,21 @@ public final class Game {
 
     // ================= save / load =================
 
+    /** The shell calls this when the app goes to the background, just before saving. */
+    public void onAppPause() {
+        screen.onAppPause();
+    }
+
+    /**
+     * Serializes everything, including the screen the player is on and any waiting messages, so the
+     * app reopens at exactly the same point.
+     */
     public String save() {
         StringBuilder sb = new StringBuilder();
-        put(sb, "v", "1");
+        put(sb, "v", "2");
         put(sb, "started", started);
         put(sb, "female", female);
+        put(sb, "name", esc(name));
         put(sb, "over", over);
         put(sb, "money", money);
         put(sb, "day", day);
@@ -355,11 +376,58 @@ public final class Game {
         put(sb, "px", px);
         put(sb, "py", py);
         put(sb, "at", at);
+        put(sb, "endReason", esc(endReason));
+        StringBuilder ds = new StringBuilder();
+        for (String[] d : dialogs) ds.append(esc(d[0])).append('|').append(esc(d[1])).append('|');
+        put(sb, "dialogs", ds);
+        put(sb, "scr", screen.kind());
+        screen.save(sb);
         return sb.toString();
     }
 
-    private static void put(StringBuilder sb, String k, Object v) {
+    static void put(StringBuilder sb, String k, Object v) {
         sb.append(k).append('=').append(v).append(';');
+    }
+
+    /** Escapes the characters the save format uses as separators. */
+    static String esc(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '%' || ch == ';' || ch == '=' || ch == '|' || ch == '\n') {
+                sb.append('%').append(Character.forDigit(ch >> 4, 16)).append(Character.forDigit(ch & 15, 16));
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    static String unesc(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '%' && i + 2 < s.length()) {
+                sb.append((char) Integer.parseInt(s.substring(i + 1, i + 3), 16));
+                i += 2;
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    static int intOf(HashMap<String, String> m, String k, int def) {
+        String v = m.get(k);
+        return v == null ? def : Integer.parseInt(v);
+    }
+
+    static float floatOf(HashMap<String, String> m, String k, float def) {
+        String v = m.get(k);
+        if (v == null) return def;
+        float f = Float.parseFloat(v);
+        if (Float.isNaN(f) || Float.isInfinite(f)) throw new NumberFormatException(k);
+        return f;
     }
 
     public void load(String s) {
@@ -370,32 +438,78 @@ public final class Game {
                 int i = kv.indexOf('=');
                 if (i > 0) m.put(kv.substring(0, i), kv.substring(i + 1));
             }
-            if (!"1".equals(m.get("v")) || !Boolean.parseBoolean(m.get("started"))) return;
-            boolean lOver = Boolean.parseBoolean(m.get("over"));
-            if (lOver) return;
+            String v = m.get("v");
+            if (!"1".equals(v) && !"2".equals(v)) return;
+            if (!Boolean.parseBoolean(m.get("started"))) return;
             female = Boolean.parseBoolean(m.get("female"));
-            money = Integer.parseInt(m.get("money"));
-            day = Integer.parseInt(m.get("day"));
-            minute = Float.parseFloat(m.get("minute"));
-            food = Float.parseFloat(m.get("food"));
-            water = Float.parseFloat(m.get("water"));
-            energy = Float.parseFloat(m.get("energy"));
-            meals = Integer.parseInt(m.get("meals"));
-            bottles = Integer.parseInt(m.get("bottles"));
+            name = unesc(m.getOrDefault("name", ""));
+            if (name.length() > NameScreen.MAX_LEN) name = name.substring(0, NameScreen.MAX_LEN);
+            money = intOf(m, "money", START_MONEY);
+            day = Math.max(1, intOf(m, "day", 1));
+            minute = Ui.clamp(floatOf(m, "minute", 540), 0, 1439.9f);
+            food = Ui.clamp(floatOf(m, "food", 70), 0, 100);
+            water = Ui.clamp(floatOf(m, "water", 70), 0, 100);
+            energy = Ui.clamp(floatOf(m, "energy", 70), 0, 100);
+            meals = (int) Ui.clamp(intOf(m, "meals", 0), 0, BAG_MAX);
+            bottles = (int) Ui.clamp(intOf(m, "bottles", 0), 0, BAG_MAX);
             cookHired = Boolean.parseBoolean(m.get("cookHired"));
-            lastShiftDay = Integer.parseInt(m.get("lastShiftDay"));
-            shiftsDone = Integer.parseInt(m.get("shiftsDone"));
-            rentDebt = Integer.parseInt(m.get("rentDebt"));
-            rentMissed = Integer.parseInt(m.get("rentMissed"));
-            px = Float.parseFloat(m.get("px"));
-            py = Float.parseFloat(m.get("py"));
-            at = Integer.parseInt(m.get("at"));
+            lastShiftDay = intOf(m, "lastShiftDay", 0);
+            shiftsDone = intOf(m, "shiftsDone", 0);
+            rentDebt = Math.max(0, intOf(m, "rentDebt", 0));
+            rentMissed = Math.max(0, intOf(m, "rentMissed", 0));
+            City.Building home = City.B[City.HOME];
+            px = Ui.clamp(floatOf(m, "px", home.doorX), 0, City.W);
+            py = Ui.clamp(floatOf(m, "py", home.doorY), 0, City.H);
+            at = intOf(m, "at", -1);
+            if (at < -1 || at >= City.B.length) at = -1;
+            over = Boolean.parseBoolean(m.get("over"));
+            endReason = unesc(m.getOrDefault("endReason", ""));
             started = true;
-            over = false;
+            dialogs.clear();
+            dialogBtn = null;
+            String[] parts = m.getOrDefault("dialogs", "").split("\\|");
+            for (int i = 0; i + 1 < parts.length; i += 2) {
+                dialogs.add(new String[]{unesc(parts[i]), unesc(parts[i + 1])});
+            }
+            screen = over ? new EndScreen(this) : restoreScreen(m);
         } catch (RuntimeException e) {
+            // A damaged save must never crash the app: start clean instead.
             started = false;
+            over = false;
+            dialogs.clear();
+            dialogBtn = null;
+            screen = new TitleScreen(this);
         }
-        dialogs.clear();
-        screen = new TitleScreen(this);
+    }
+
+    private Screen restoreScreen(HashMap<String, String> m) {
+        String scr = m.getOrDefault("scr", "map");
+        switch (scr) {
+            case "title":
+                return new TitleScreen(this);
+            case "name": {
+                NameScreen ns = new NameScreen(this, Boolean.parseBoolean(m.get("nf")));
+                String typed = unesc(m.getOrDefault("nn", ""));
+                ns.name = typed.length() > NameScreen.MAX_LEN ? typed.substring(0, NameScreen.MAX_LEN) : typed;
+                return ns;
+            }
+            case "building": {
+                int id = intOf(m, "sb", -1);
+                if (id < 0 || id >= City.B.length) return new MapScreen(this);
+                return new BuildingScreen(this, id);
+            }
+            case "sleep": {
+                SleepScreen sl = new SleepScreen(this, 0);
+                sl.left = Ui.clamp(floatOf(m, "sl", 0), 0, 24 * 60);
+                return sl;
+            }
+            case "cook":
+                return CookGame.restore(this, m);
+            default: {
+                MapScreen ms = new MapScreen(this);
+                ms.restore(m);
+                return ms;
+            }
+        }
     }
 }

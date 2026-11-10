@@ -8,7 +8,7 @@ import java.util.Random;
  */
 final class CookGame extends Screen {
     static final int ROUNDS = 8, BASE = 30;
-    private static final int INTRO = 0, PLAY = 1, SHOW = 2, DONE = 3;
+    private static final int INTRO = 0, PLAY = 1, SHOW = 2, DONE = 3, PAUSED = 4;
     private static final int BURNT = 0, OK = 1, PERFECT = 2;
     private static final float[] MULT = {0.4f, 1f, 1.3f};
     private static final float BAR_X = 30, BAR_W = 300;
@@ -18,6 +18,8 @@ final class CookGame extends Screen {
     private float pos, dir = 1, zc, zw, speed, timer, t;
     private int pay;
     private boolean tired, sentHome;
+    /** While PAUSED: the dish was already judged and only its hour is left to pass. */
+    private boolean resumeShow;
     private final Random rnd = new Random();
 
     CookGame(Game g) {
@@ -62,25 +64,27 @@ final class CookGame extends Screen {
             if (timer <= 0) judge(true);
         } else if (state == SHOW) {
             timer -= dt;
-            if (timer <= 0) {
-                // Out of strength: the manager sends you home instead of letting you drop.
-                float nextHour = (g.food <= 0 || g.water <= 0) ? 18 : 6;
-                if (g.energy - nextHour < 2) {
-                    sentHome = true;
-                    state = DONE;
-                    g.shiftsDone++;
-                    return;
-                }
-                g.advance(60, Game.WORK);
-                if (g.screen != this) return;
-                round++;
-                if (round >= ROUNDS) {
-                    state = DONE;
-                    g.shiftsDone++;
-                } else {
-                    startRound();
-                }
-            }
+            if (timer <= 0) finishDish();
+        }
+    }
+
+    /** The hour of the dish that was just judged passes; then the next dish or the end of the shift. */
+    private void finishDish() {
+        // Out of strength: the manager sends you home instead of letting you drop.
+        if (g.energy - 6 < 2) {
+            sentHome = true;
+            state = DONE;
+            g.shiftsDone++;
+            return;
+        }
+        g.advance(60, Game.WORK);
+        if (g.screen != this) return;
+        round++;
+        if (round >= ROUNDS) {
+            state = DONE;
+            g.shiftsDone++;
+        } else {
+            startRound();
         }
     }
 
@@ -103,8 +107,18 @@ final class CookGame extends Screen {
         }
         Btn b = hit(x, y);
         if (b == null) return;
-        if (state == INTRO) startRound();
-        else if (state == DONE) g.screen = new BuildingScreen(g, City.RESTAURANT);
+        if (state == INTRO) {
+            startRound();
+        } else if (state == DONE) {
+            g.screen = new BuildingScreen(g, City.RESTAURANT);
+        } else if (state == PAUSED) {
+            if (resumeShow) {
+                resumeShow = false;
+                finishDish();
+            } else {
+                startRound();
+            }
+        }
     }
 
     @Override
@@ -120,6 +134,11 @@ final class CookGame extends Screen {
             float y = Ui.paragraph(c, "הסמן רץ על פס החום. לוחצים על המסך כשהוא בתוך האזור הירוק, "
                     + "כמה שיותר קרוב לאמצע. 8 מנות, אחת לכל שעה.", Game.W / 2, h * 0.58f, 300, 15, Ui.DIM);
             btns.add(new Btn(0, 40, y + 14, 280, 54, "מתחילים", true, true));
+        } else if (state == PAUSED) {
+            drawPan(c, h * 0.42f, 0.5f);
+            float y = Ui.paragraph(c, "המשמרת בהפסקה. הרווחת עד עכשיו " + Ui.nis(pay) + ".", Game.W / 2,
+                    h * 0.58f, 300, 15, Ui.DIM);
+            btns.add(new Btn(0, 40, y + 14, 280, 54, "ממשיכים", true, true));
         } else if (state == DONE) {
             int perfect = 0, ok = 0, burnt = 0;
             int cooked = sentHome ? round + 1 : ROUNDS;
@@ -190,5 +209,49 @@ final class CookGame extends Screen {
         // Leaving is only possible before the first dish; after that the shift has to be finished.
         if (state == INTRO) g.screen = new BuildingScreen(g, City.RESTAURANT);
         return true;
+    }
+
+    @Override
+    String kind() {
+        return "cook";
+    }
+
+    @Override
+    void save(StringBuilder sb) {
+        StringBuilder res = new StringBuilder();
+        for (int r : results) res.append(r);
+        Game.put(sb, "cs", state);
+        Game.put(sb, "cr", round);
+        Game.put(sb, "cres", res);
+        Game.put(sb, "cpay", pay);
+        Game.put(sb, "csent", sentHome);
+        Game.put(sb, "csw", resumeShow);
+    }
+
+    /** Leaving the app in the middle of a dish pauses the shift; the dish is redone on return. */
+    @Override
+    void onAppPause() {
+        if (state == PLAY) {
+            state = PAUSED;
+            resumeShow = false;
+        } else if (state == SHOW) {
+            state = PAUSED;
+            resumeShow = true;
+        }
+    }
+
+    static Screen restore(Game g, java.util.HashMap<String, String> m) {
+        CookGame c = new CookGame(g);
+        int st = Game.intOf(m, "cs", INTRO);
+        c.round = (int) Ui.clamp(Game.intOf(m, "cr", 0), 0, st == DONE ? ROUNDS : ROUNDS - 1);
+        String res = m.getOrDefault("cres", "");
+        for (int i = 0; i < ROUNDS && i < res.length(); i++) {
+            c.results[i] = (int) Ui.clamp(res.charAt(i) - '0', BURNT, PERFECT);
+        }
+        c.pay = Math.max(0, Game.intOf(m, "cpay", 0));
+        c.sentHome = Boolean.parseBoolean(m.get("csent"));
+        c.resumeShow = Boolean.parseBoolean(m.get("csw")) || st == SHOW;
+        c.state = (st == INTRO || st == DONE) ? st : PAUSED;
+        return c;
     }
 }

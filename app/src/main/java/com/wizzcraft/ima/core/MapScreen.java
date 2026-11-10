@@ -197,4 +197,22 @@ final class MapScreen extends Screen {
         g.screen = new TitleScreen(g);
         return true;
     }
+
+    @Override
+    String kind() {
+        return "map";
+    }
+
+    @Override
+    void save(StringBuilder sb) {
+        Game.put(sb, "mt", target);
+        Game.put(sb, "mf", ff);
+    }
+
+    /** Picks the walk back up where it was saved. */
+    void restore(java.util.HashMap<String, String> m) {
+        int t0 = Game.intOf(m, "mt", -1);
+        if (t0 >= 0 && t0 < City.B.length) walkTo(t0);
+        ff = Boolean.parseBoolean(m.get("mf"));
+    }
 }

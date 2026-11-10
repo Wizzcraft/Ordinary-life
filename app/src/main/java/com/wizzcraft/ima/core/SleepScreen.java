@@ -4,7 +4,7 @@ package com.wizzcraft.ima.core;
 final class SleepScreen extends Screen {
     /** Game minutes per real second while asleep (8 hours in about 2.5 seconds). */
     private static final float RATE = 190;
-    private float left;
+    float left;
     private float t;
 
     SleepScreen(Game g, int hours) {
@@ -47,5 +47,15 @@ final class SleepScreen extends Screen {
     @Override
     boolean back() {
         return true;
+    }
+
+    @Override
+    String kind() {
+        return "sleep";
+    }
+
+    @Override
+    void save(StringBuilder sb) {
+        Game.put(sb, "sl", left);
     }
 }

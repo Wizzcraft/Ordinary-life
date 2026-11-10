@@ -22,6 +22,8 @@ public final class Sim {
         monkey(400_000, 7);
         saveLoad();
         regressions();
+        resume();
+        menuPause();
         System.out.println("ALL OK");
     }
 
@@ -120,8 +122,14 @@ public final class Sim {
         gfx = new AwtGfx(36, 76, 0.1f);
         frame();
         shot("01-title");
-        tapLabel("אישה");
+        check(tapLabel("אישה"), "choose gender");
         frame();
+        for (String k : new String[]{"ג", "י", "ל"}) check(tapLabel(k), "type " + k);
+        frame();
+        shot("01b-name");
+        check(tapLabel("המשך"), "confirm name");
+        frame();
+        check(g.name.equals("גיל") && g.female, "name and gender set");
         shot("02-mom-dialog");
         closeDialogs();
         frame();
@@ -195,8 +203,7 @@ public final class Sim {
         g = new Game();
         gfx = new AwtGfx(36, 76, 0.1f);
         Random r = new Random(seed);
-        frame();
-        tapLabel("גבר");
+        startGame("גבר");
         closeDialogs();
         int lastDay = 0, collapses = 0;
         int guard = 0;
@@ -241,6 +248,8 @@ public final class Sim {
                     tapLabel("לישון 8");
                     for (int i = 0; i < 400 && g.screen instanceof SleepScreen; i++) frame();
                 } else {
+                    // Menus pause the clock, so waiting happens out on the street.
+                    tapLabel("חזרה");
                     frames(60);
                 }
             }
@@ -283,7 +292,13 @@ public final class Sim {
                 g.up(x, y);
             }
             if (r.nextInt(900) == 0) g.back();
-            if (r.nextInt(5000) == 0) g.load(g.save());
+            if (r.nextInt(400) == 0) {
+                // Leave the app and come back, sometimes into a brand-new process.
+                g.onAppPause();
+                String saved = g.save();
+                if (r.nextBoolean()) g = new Game();
+                g.load(saved);
+            }
             if (g.over) games++;
             maxDay = Math.max(maxDay, g.day);
             check(g.food >= 0 && g.food <= 100 && g.water >= 0 && g.water <= 100 && g.energy >= 0 && g.energy <= 100,
@@ -297,8 +312,7 @@ public final class Sim {
     static void saveLoad() {
         g = new Game();
         gfx = new AwtGfx(36, 76, 0.1f);
-        frame();
-        tapLabel("אישה");
+        startGame("אישה");
         closeDialogs();
         goTo(City.MARKET);
         tapLabel("בקבוק מים");
@@ -307,7 +321,7 @@ public final class Sim {
         float minute = g.minute;
         Game g2 = new Game();
         g2.load(s);
-        check(g2.started && g2.female && g2.money == money && g2.bottles == bottles && g2.at == at
+        check(g2.name.equals("גיל") && g2.started && g2.female && g2.money == money && g2.bottles == bottles && g2.at == at
                 && Math.abs(g2.minute - minute) < 0.01f, "save/load round trip");
         Game g3 = new Game();
         g3.load("garbage;;=;v=1;started=true;money=abc");
@@ -328,11 +342,8 @@ public final class Sim {
         g.energy = 30;
         check(!tapLabel("להתחיל משמרת"), "reg: shift blocked at low energy");
         g.energy = 90;
-        g.food = 0;
-        check(!tapLabel("להתחיל משמרת"), "reg: shift blocked when starving");
 
         // Leaving the intro (or saving on it) doesn't burn today's shift.
-        g.food = 80;
         check(tapLabel("להתחיל משמרת"), "reg: shift starts");
         check(g.screen instanceof CookGame && g.lastShiftDay != g.day, "reg: intro doesn't count as a shift");
         g.back();
@@ -374,12 +385,162 @@ public final class Sim {
         System.out.println("regressions ok");
     }
 
+    /** Leaves the app and comes back in a brand-new process. */
+    static void reload() {
+        g.onAppPause();
+        String s = g.save();
+        Game n = new Game();
+        n.load(s);
+        check(n.save().equals(s), "resume: reloading changes nothing\n  " + s + "\n  " + n.save());
+        g = n;
+        frame();
+    }
+
+    /** Closing the app at any point and reopening it lands on the same screen in the same state. */
+    static void resume() {
+        // In the middle of a walk: it simply goes on.
+        fresh();
+        tapBuilding(City.RESTAURANT);
+        frames(60);
+        float px = g.px, py = g.py;
+        reload();
+        check(g.screen instanceof MapScreen && Math.abs(g.px - px) + Math.abs(g.py - py) < 10, "resume: mid-walk position");
+        for (int i = 0; i < 600 && !(g.screen instanceof BuildingScreen); i++) frame();
+        check(g.screen instanceof BuildingScreen && g.at == City.RESTAURANT, "resume: walk finishes after reload");
+
+        // Inside a building, with a message waiting.
+        tapLabel("לבקש עבודה");
+        check(g.hasDialog(), "resume: hired dialog is up");
+        reload();
+        check(g.screen instanceof BuildingScreen && g.at == City.RESTAURANT && g.hasDialog() && g.cookHired,
+                "resume: building and its dialog survive");
+        closeDialogs();
+
+        // Shift: intro, in the middle of a dish, and right after a dish was judged.
+        g.minute = 9 * 60;
+        g.energy = 95;
+        check(tapLabel("להתחיל משמרת"), "resume: shift starts");
+        reload();
+        check(g.screen instanceof CookGame && g.lastShiftDay != g.day, "resume: cook intro survives");
+        check(tapLabel("מתחילים"), "resume: begin");
+        frames(10);
+        check(((CookGame) g.screen).playing(), "resume: playing");
+        reload();
+        check(g.screen instanceof CookGame && !((CookGame) g.screen).playing() && g.lastShiftDay == g.day,
+                "resume: mid-dish comes back paused");
+        frames(120);
+        int money = g.money;
+        float minute = g.minute;
+        check(tapLabel("ממשיכים") && ((CookGame) g.screen).playing(), "resume: the dish restarts");
+        g.down(180, 500);
+        check(g.money > money, "resume: dish judged and paid");
+        money = g.money;
+        reload();
+        check(g.money == money && Math.abs(g.minute - minute) < 1, "resume: nothing passes while paused");
+        check(tapLabel("ממשיכים"), "resume: continue after a judged dish");
+        check(g.money == money && Math.abs(g.minute - minute - 60) < 1 && ((CookGame) g.screen).playing(),
+                "resume: the judged dish is not paid twice and its hour passes once");
+        frame();
+        for (int i = 0; i < 30 * 120 && ((CookGame) g.screen).btns.isEmpty(); i++) {
+            frame();
+            if (i % 25 == 0) g.down(180, 500);
+        }
+        frame();
+        reload();
+        check(g.screen instanceof CookGame && g.screen.btns.size() == 1 && g.shiftsDone == 1, "resume: shift summary survives");
+        tapLabel("המשך");
+        check(g.screen instanceof BuildingScreen, "resume: back in the restaurant");
+        check(g.food > 60 && g.water > 60, "work: the employer's food and water keep you fed (" + g.food + "/" + g.water + ")");
+
+        // Asleep: the rest of the night still passes, no more and no less.
+        check(goTo(City.HOME), "resume: home");
+        g.energy = 10;
+        float start = g.day * 1440f + g.minute;
+        check(tapLabel("לישון 8"), "resume: sleep");
+        frames(25);
+        reload();
+        check(g.screen instanceof SleepScreen, "resume: still asleep");
+        for (int i = 0; i < 400 && g.screen instanceof SleepScreen; i++) {
+            frame();
+            closeDialogs();
+        }
+        float slept = g.day * 1440f + g.minute - start;
+        check(g.screen instanceof BuildingScreen && Math.abs(slept - 480) < 12, "resume: slept 8 hours in total, got " + slept);
+
+        // Title (after backing out of the map) and game over.
+        tapLabel("חזרה");
+        g.back();
+        reload();
+        check(g.screen instanceof TitleScreen && g.started, "resume: title with a game to continue");
+        check(tapLabel("המשך"), "resume: continue from title");
+        g.end("בדיקה = של; סוף | משחק 100%");
+        reload();
+        check(g.screen instanceof EndScreen && g.endReason.equals("בדיקה = של; סוף | משחק 100%"), "resume: end screen and its text");
+
+        // Halfway through typing a name on a fresh install: nothing to resume yet, back to the title.
+        g = new Game();
+        frame();
+        tapLabel("אישה");
+        tapLabel("ג");
+        g.onAppPause();
+        Game half = new Game();
+        half.load(g.save());
+        check(half.screen instanceof TitleScreen && !half.started, "resume: unfinished name entry starts clean");
+        // Keyboard: delete, no leading or double spaces, length limit, empty name can't continue.
+        check(!tapLabel("המשך") || g.screen instanceof MapScreen, "name: typed one letter");
+        g = new Game();
+        frame();
+        tapLabel("גבר");
+        check(!tapLabel("המשך"), "name: empty name is refused");
+        tapLabel("רווח");
+        for (int i = 0; i < 20; i++) tapLabel("ש");
+        check(((NameScreen) g.screen).name.length() == NameScreen.MAX_LEN, "name: length limit");
+        for (int i = 0; i < 20; i++) tapLabel("מחק");
+        check(((NameScreen) g.screen).name.isEmpty(), "name: delete");
+
+        // A save from the first build still loads.
+        Game old = new Game();
+        old.load("v=1;started=true;female=true;over=false;money=392;day=3;minute=674.5;food=61;water=54;energy=73;"
+                + "meals=1;bottles=2;cookHired=true;lastShiftDay=2;shiftsDone=2;rentDebt=0;rentMissed=0;px=230.0;py=190.0;at=5;");
+        check(old.started && old.day == 3 && old.money == 392 && old.screen instanceof MapScreen && old.name.isEmpty()
+                && old.hey().isEmpty(), "resume: v1 save loads");
+        System.out.println("resume ok");
+    }
+
+    /** Menus pause the clock. */
+    static void menuPause() {
+        fresh();
+        check(goTo(City.MARKET), "pause: at market");
+        float minute = g.minute, food = g.food;
+        frames(300);
+        check(g.minute == minute && g.food == food, "pause: time stands still inside a building menu");
+        tapLabel("חזרה");
+        frames(30);
+        check(g.minute > minute, "pause: time runs again on the street");
+        g.back();
+        minute = g.minute;
+        frames(300);
+        check(g.screen instanceof TitleScreen && g.minute == minute, "pause: time stands still on the main menu");
+        System.out.println("menu pause ok");
+    }
+
     static void fresh() {
         g = new Game();
         gfx = new AwtGfx(36, 76, 0.1f);
-        frame();
-        tapLabel("גבר");
+        startGame("גבר");
         closeDialogs();
+    }
+
+    /** Title -> gender -> type a name -> into the game. */
+    static void startGame(String gender) {
+        frame();
+        check(tapLabel(gender), "choose " + gender);
+        frame();
+        check(g.screen instanceof NameScreen, "name screen opens");
+        for (String k : new String[]{"ג", "י", "ל"}) check(tapLabel(k), "type " + k);
+        check(tapLabel("המשך"), "confirm name");
+        frame();
+        check(g.started && g.name.equals("גיל"), "game started with the typed name");
     }
 
     static void check(boolean ok, String what) {

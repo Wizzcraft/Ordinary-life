@@ -1,6 +1,9 @@
 package com.wizzcraft.ima.core;
 
-/** Inside a building: a short list of things to do there. The clock keeps running. */
+/**
+ * Inside a building: a menu of things to do there. Time stands still while the menu is open; only
+ * the actions themselves take time.
+ */
 final class BuildingScreen extends Screen {
     private static final int EXIT = 99, SLEEP8 = 1, NAP = 2, TAP = 3, BUY_MEAL = 10, BUY_WATER = 11,
             ASK_JOB = 20, SHIFT = 21, DINE = 22, BAG_EAT = 30, BAG_DRINK = 31;
@@ -14,11 +17,6 @@ final class BuildingScreen extends Screen {
     BuildingScreen(Game g, int id) {
         super(g);
         b = City.B[id];
-    }
-
-    @Override
-    void update(float dt) {
-        g.advance(dt * Game.MIN_PER_SEC, Game.IDLE);
     }
 
     private void row(int id, String label, boolean on, boolean primary) {
@@ -60,7 +58,7 @@ final class BuildingScreen extends Screen {
                     info(c, "בתיק: " + Ui.count(g.meals, "ארוחה אחת", "ארוחות") + ", "
                             + Ui.count(g.bottles, "בקבוק אחד", "בקבוקים") + ". נכנסים עד " + Game.BAG_MAX + " מכל סוג.");
                 } else {
-                    info(c, "הסופר סגור. אפשר לחכות בחוץ או לחזור מחר.");
+                    info(c, "הסופר סגור. אפשר לחכות ברחוב או לחזור מחר.");
                 }
                 break;
             case City.RESTAURANT:
@@ -73,7 +71,8 @@ final class BuildingScreen extends Screen {
                         if (why != null) info(c, why);
                     }
                     row(DINE, "לאכול כאן · " + Ui.nis(Game.DINE_PRICE), g.money >= Game.DINE_PRICE && g.food < 90, false);
-                    info(c, "שכר טבח: " + Ui.nis(CookGame.BASE) + " לשעה, לפי איך שהמנות יוצאות.");
+                    info(c, "שכר טבח: " + Ui.nis(CookGame.BASE) + " לשעה, לפי איך שהמנות יוצאות. "
+                            + "אוכל ושתייה במשמרת על חשבון המסעדה.");
                 } else {
                     info(c, "המסעדה סגורה.");
                 }
@@ -96,7 +95,6 @@ final class BuildingScreen extends Screen {
         if (g.minute < SHIFT_FROM || g.minute > SHIFT_TO) {
             return "משמרת אפשר להתחיל בין " + Ui.clock(SHIFT_FROM) + " ל-" + Ui.clock(SHIFT_TO) + ".";
         }
-        if (g.food <= 0 || g.water <= 0) return "על בטן ריקה לא עובדים. קודם לאכול ולשתות.";
         if (g.energy < MIN_SHIFT_ENERGY) return "אין לך כוח למשמרת שלמה. קודם לישון.";
         return null;
     }
@@ -161,9 +159,9 @@ final class BuildingScreen extends Screen {
                 break;
             case ASK_JOB:
                 g.cookHired = true;
-                g.dialog("התקבלת!", "מהיום " + g.t("אתה טבח", "את טבחית") + " במסעדה. משמרת היא 8 שעות, "
+                g.dialog("התקבלת!", g.hey() + "מהיום " + g.t("אתה טבח", "את טבחית") + " במסעדה. משמרת היא 8 שעות, "
                         + Ui.nis(CookGame.BASE) + " לשעה, ואפשר להתחיל בין " + Ui.clock(SHIFT_FROM)
-                        + " ל-" + Ui.clock(SHIFT_TO) + ".");
+                        + " ל-" + Ui.clock(SHIFT_TO) + ". אוכל ושתייה במשמרת עלינו.");
                 break;
             case SHIFT:
                 if (!g.cookHired || shiftBlock() != null) break;
@@ -185,5 +183,15 @@ final class BuildingScreen extends Screen {
     boolean back() {
         g.screen = new MapScreen(g);
         return true;
+    }
+
+    @Override
+    String kind() {
+        return "building";
+    }
+
+    @Override
+    void save(StringBuilder sb) {
+        Game.put(sb, "sb", b.id);
     }
 }
