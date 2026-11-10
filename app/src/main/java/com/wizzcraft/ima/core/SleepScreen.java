@@ -17,7 +17,7 @@ final class SleepScreen extends Screen {
         super(g);
         this.hours = hours;
         left = hours * 60;
-        tip = g.fill(Lines.tip(g.rnd));
+        tip = g.fill(Say.tip(g));
     }
 
     private SleepScreen(Game g) {

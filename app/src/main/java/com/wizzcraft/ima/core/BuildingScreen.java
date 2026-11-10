@@ -55,7 +55,7 @@ final class BuildingScreen extends Screen {
     }
 
     private String closedLine() {
-        if (closedLine.isEmpty()) closedLine = g.fill(Lines.closed(b.id, g.facts(), g.rnd));
+        if (closedLine.isEmpty()) closedLine = g.fill(Say.closed(g, b.id));
         return closedLine;
     }
 
@@ -352,7 +352,9 @@ final class BuildingScreen extends Screen {
             return;
         }
         g.setVar("hired." + j.id, 1);
-        g.play(Lines.promotion(j.id, 0, g.facts()), Sfx.HIRED);
+        Beat boss = Say.promotion(g, j, 0);
+        if (boss != null) g.play(boss, Sfx.HIRED);
+        else g.sfx(Sfx.HIRED);
         g.dialog("התקבלת!", g.hey() + "מהיום " + g.t("אתה ", "את ") + name + ". משמרת היא " + Job.SHIFT_HOURS
                 + " שעות, " + j.payLine(0) + ", ואפשר להתחיל " + j.window()
                 + ". אוכל ושתייה במשמרת על חשבון המעסיק.");

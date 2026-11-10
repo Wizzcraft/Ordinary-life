@@ -232,7 +232,7 @@ public final class Game {
      */
     boolean momToast(String situation) {
         if (rnd.nextFloat() >= MOM_TOAST_CHANCE) return false;
-        String s = fill(MomLines.toast(situation, facts(), rnd));
+        String s = fill(Say.toast(this, situation));
         if (s.isEmpty()) return false;
         toast("אמא: " + s);
         return true;
@@ -447,6 +447,12 @@ public final class Game {
         return !dialogs.isEmpty();
     }
 
+    /** The speaker (or title) of the message that is up; "" when there is none. */
+    String dialogTitle() {
+        Msg d = dialogs.peek();
+        return d == null ? "" : d.title;
+    }
+
     /** What has to happen once when a message reaches the screen: its sound, its seen flag, its effect. */
     private void showFront() {
         Msg d = dialogs.peek();
@@ -603,7 +609,7 @@ public final class Game {
         setVar("mom.worry", 50);
         setVar("eng.morning", day);
         markSummary();
-        play(Story.intro(facts()));
+        play(Say.intro(this));
         screen = new MapScreen(this);
     }
 
@@ -670,15 +676,15 @@ public final class Game {
         int week = day / MOM_EVERY_DAYS;
         if (week > var("eng.week")) {
             setVar("eng.week", week);
-            play(MomLines.weekly(facts(), rnd), Sfx.PHONE);
+            play(Say.weekly(this), Sfx.PHONE);
         }
-        play(Story.onNewDay(facts(), rnd));
+        play(Say.newDay(this));
     }
 
     /** The parents' visit: every beat but the last is read as a message, the last one is the end screen. */
     private void finale() {
         setVar("eng.finale", 1);
-        List<Beat> beats = Story.finale(facts());
+        List<Beat> beats = Say.finale(this);
         int n = beats == null ? 0 : beats.size();
         for (int i = 0; i < n - 1; i++) play(beats.get(i));
         Beat last = n == 0 ? null : beats.get(n - 1);

@@ -956,7 +956,8 @@ final class MomLines {
         }
         String out = sb.toString();
         int g = female ? 1 : 0;
-        if (out.contains("{job}")) out = out.replace("{job}", f.jobId >= 0 && f.jobId < JOBS.length ? JOBS[f.jobId][g] : JOBS[0][g]);
+        if (out.contains("{job}")) out = out.replace("{job}", f.jobId >= 0 && f.jobId < JOBS.length ? JOBS[f.jobId][g]
+                : f.jobName != null && !f.jobName.isEmpty() ? f.jobName : JOBS[0][g]);
         if (out.contains("{rank}")) out = out.replace("{rank}", RANKS[Math.max(0, Math.min(2, f.jobRank))][g]);
         if (out.contains("{boxes}")) out = out.replace("{boxes}", String.valueOf(Math.max(2, (int) f.var("mom.boxes"))));
         return out;

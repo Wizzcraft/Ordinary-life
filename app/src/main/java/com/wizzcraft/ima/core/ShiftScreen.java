@@ -57,7 +57,7 @@ final class ShiftScreen extends Screen {
         Mini mini = Minis.forJob(job);
         if (mini == null) return null;
         ShiftScreen s = new ShiftScreen(g, job, mini);
-        s.startLine = g.fill(Lines.shiftStart(job.id, s.rank, g.facts(), g.rnd));
+        s.startLine = g.fill(Say.shiftStart(g, job, s.rank));
         return s;
     }
 
@@ -162,7 +162,7 @@ final class ShiftScreen extends Screen {
             g.train(job.trains, TRAIN_BASE + TRAIN_QUALITY * quality);
             trained = g.stat(job.trains) - was;
         }
-        endLine = g.fill(Lines.shiftEnd(job.id, (float) sum / n, g.facts(), g.rnd));
+        endLine = g.fill(Say.shiftEnd(g, job, (float) sum / n));
         if (rankedUp) {
             g.sfx(Sfx.LEVEL);
             g.fx.burst(Game.W / 2, g.h * 0.4f, Ui.GOOD, 30);
@@ -209,7 +209,10 @@ final class ShiftScreen extends Screen {
     private void leave() {
         g.screen = new BuildingScreen(g, job.building);
         if (rankedUp) {
-            g.play(Lines.promotion(job.id, g.rank(job.id), g.facts()), Sfx.LEVEL);
+            Beat boss = Say.promotion(g, job, g.rank(job.id));
+            if (boss != null) g.play(boss, Sfx.LEVEL);
+            else g.dialog("קידום!", g.hey() + "מהיום " + g.t("אתה ", "את ") + job.name(g.female) + " בדרגת "
+                    + Job.rankName(g.female, g.rank(job.id)) + ". " + job.payLine(g.rank(job.id)) + ".", Sfx.LEVEL);
         } else if (g.money >= Game.RICH) {
             g.momToast("rich");
         }

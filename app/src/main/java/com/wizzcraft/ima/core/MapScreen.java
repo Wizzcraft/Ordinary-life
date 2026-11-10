@@ -93,7 +93,7 @@ final class MapScreen extends Screen {
         g.sfx(Sfx.DOOR);
         g.screen = new BuildingScreen(g, id);
         // Now and then somebody stops you on the way in.
-        if (g.rnd.nextFloat() < Game.STREET_CHANCE) g.play(Lines.street(g.facts(), g.rnd));
+        if (g.rnd.nextFloat() < Game.STREET_CHANCE) g.play(Say.street(g));
     }
 
     @Override

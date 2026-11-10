@@ -24,7 +24,7 @@ final class SummaryScreen extends Screen {
         s.spent = (int) g.var("day.spent");
         for (int i = 0; i < 3; i++) s.delta[i] = g.stat(i) - g.statAtLastSummary(i);
         g.closeDay();
-        s.quip = g.fill(MomLines.summary(g.facts(), g.rnd));
+        s.quip = g.fill(Say.summary(g));
         return s;
     }
 

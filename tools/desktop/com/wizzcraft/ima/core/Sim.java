@@ -105,6 +105,8 @@ public final class Sim {
         run(only, "summary", Sim::summary);
         run(only, "mornings", Sim::mornings);
         run(only, "finale", Sim::finale);
+        run(only, "narrative", Sim::narrative);
+        run(only, "family", Sim::family);
         run(only, "events", Sim::events);
         run(only, "venues", Sim::venues);
         run(only, "crime", Sim::crime);
@@ -484,6 +486,9 @@ public final class Sim {
         g = new Game();
         startGame("גבר");
         closeDialogs();
+        // The opening lets the player answer mom; the tests start from her middle whatever was answered.
+        g.setVar("mom.trust", 50);
+        g.setVar("mom.worry", 50);
         heard.clear();
     }
 
@@ -925,6 +930,150 @@ public final class Sim {
         check(!tapLabel("שיעור: ") && g.screen instanceof BuildingScreen, "no lesson without the money for it");
     }
 
+    // ================= the written content =================
+
+    static boolean resolved(String s) {
+        return s != null && s.indexOf('[') < 0 && s.indexOf(']') < 0 && s.indexOf('{') < 0 && s.indexOf('|') < 0;
+    }
+
+    static void checkBeat(Beat b, String where) {
+        if (b == null) return;
+        g.play(b);
+        int cards = 0;
+        while (g.hasDialog() && cards < 5) {
+            frame();
+            String text = drawn();
+            check(resolved(text), where + ": markup left on screen: " + text);
+            check(!g.dialogBtns.isEmpty() && g.dialogBtns.size() <= 3, where + ": a card has one to three buttons");
+            for (Btn btn : g.dialogBtns) check(btn.y + btn.h <= lh && btn.y > 0, where + ": the buttons are on screen");
+            tap(g.dialogBtns.get(g.dialogBtns.size() - 1));
+            cards++;
+        }
+        check(cards >= 1 && cards <= 2, where + ": a beat is one card, or two with its reply; got " + cards);
+    }
+
+    /**
+     * Every hook of Story, MomLines and Lines, for both genders, every job the build has (and none),
+     * every rank and building, across the whole year, at both screen heights: nothing throws,
+     * nothing reaches the screen with its markup, every card keeps its buttons on screen.
+     */
+    static void narrative() {
+        Random r = new Random(9);
+        int[] jobs = {-1, 0, 1, 2, 3, 4, 5, Job.DOCTOR, Job.DEV};
+        int beats = 0, lines = 0;
+        for (int pass = 0; pass < 4; pass++) {
+            lh = pass % 2 == 0 ? 760 : 560;
+            g = new Game();
+            g.newGame(pass >= 2, pass == 1 ? "" : "נועה");
+            closeDialogs();
+            for (int job : jobs) {
+                for (String k : g.varKeys("hired.")) g.setVar(k, 0);
+                if (job >= 0) g.setVar("hired." + job, 1);
+                for (int day = 1; day <= Story.FINAL_DAY; day += 1 + r.nextInt(9)) {
+                    g.day = day;
+                    g.minute = r.nextInt(1440);
+                    g.money = r.nextInt(4) == 0 ? -200 : r.nextInt(6000);
+                    g.energy = r.nextInt(100);
+                    g.food = r.nextInt(100);
+                    g.rentDebt = r.nextInt(3) == 0 ? 900 : 0;
+                    g.rentMissed = r.nextInt(4);
+                    if (job >= 0) g.setVar("xp." + job, r.nextInt(200));
+                    g.setVar("heat", r.nextInt(100));
+                    g.setVar("record", r.nextInt(2));
+                    g.setVar("mom.trust", r.nextInt(101));
+                    g.setVar("mom.worry", r.nextInt(101));
+                    for (String lie : new String[]{"lie.job", "lie.money", "lie.home"}) g.setVar(lie, r.nextInt(2));
+                    Facts f = g.facts();
+                    check(f.jobId == job, "facts carry the job");
+                    checkBeat(MomLines.weekly(f, r), "mom's weekly call");
+                    for (Beat b : Story.onNewDay(f, r)) checkBeat(b, "story, day " + day);
+                    checkBeat(Lines.street(f, r), "street");
+                    beats += 3;
+                    String[] said = {MomLines.summary(f, r), Lines.tip(r), Lines.closed(r.nextInt(City.B.length + 1), f, r),
+                            Lines.shiftStart(job, r.nextInt(3), f, r), Lines.shiftEnd(job, r.nextFloat() * 2, f, r)};
+                    for (String s : said) check(s != null && resolved(g.fill(s)), "a line with markup left: " + s);
+                    for (String sit : new String[]{"ate", "drank", "bought", "tired", "rich", "broke", "night", "won", "lost", "nope"}) {
+                        String s = MomLines.toast(sit, f, r);
+                        check(s == null || resolved(g.fill(s)), "a toast with markup left: " + s);
+                        lines++;
+                    }
+                    lines += said.length;
+                    if (job >= 0) for (int rank = 0; rank < 3; rank++) checkBeat(Say.promotion(g, Job.byId(job), rank), "promotion");
+                }
+                // The visit, with whatever this year looked like: every card readable, one ending.
+                g.day = Story.FINAL_DAY;
+                List<Beat> fin = Story.finale(g.facts());
+                check(fin.size() >= 2 && fin.size() <= 14, "the visit is a handful of cards, got " + fin.size());
+                for (Beat b : fin) check(b != null && resolved(g.fill(g.female ? b.f : b.m)) && b.options.length <= 3, "a visit card: " + (b == null ? "null" : b.id + " " + b.options.length + " " + g.fill(g.female ? b.f : b.m)));
+                for (int i = 0; i < fin.size() - 1; i++) checkBeat(fin.get(i), "the visit");
+                String ending = g.fill(g.female ? fin.get(fin.size() - 1).f : fin.get(fin.size() - 1).m);
+                check(ending.length() > 20 && ending.length() <= 420, "the ending fits the end screen: " + ending.length());
+                for (String k : g.varKeys("seen.")) g.setVar(k, 0);
+            }
+        }
+        lh = 760;
+        System.out.printf("  %d beats and %d lines through the engine%n", beats, lines);
+    }
+
+    /** Mom in small doses: the weekly call is two cards at most, and the family speaks up unprompted once a day at most. */
+    static void family() {
+        // Toasts: however many small moments a day has, mom comments on one.
+        fresh();
+        g.setVar("eng.family", 0);
+        for (int day = 2; day <= 6; day++) {
+            g.day = day;
+            int said = 0;
+            for (int i = 0; i < 300; i++) if (g.momToast(i % 2 == 0 ? "ate" : "drank")) said++;
+            check(said == 1, "one toast from mom on day " + day + ", got " + said);
+        }
+        // The summary: mom's word about a day she already commented on is left out; about a quiet day it is there.
+        g.day = 8;
+        g.minute = 7 * 60;
+        g.setVar("eng.family", 7);
+        check(Say.summary(g).isEmpty(), "no second word about a day mom already spoke on");
+        g.setVar("eng.family", 6);
+        check(!Say.summary(g).isEmpty() && g.var("eng.family") == 7, "a quiet day gets her word, and it counts for that day");
+        check(Say.summary(g).isEmpty(), "and only once");
+        check(Say.familyFree(g, 8), "the new day still has its own moment");
+        // The whole year, morning by morning: the call is at most two cards, and besides it the
+        // family takes at most one card and no toast, or one toast and no card.
+        for (int pass = 0; pass < 2; pass++) {
+            g = new Game();
+            g.newGame(pass == 1, "גיל");
+            closeDialogs();
+            int calls = 0, moments = 0;
+            for (int day = 2; day < Story.FINAL_DAY; day++) {
+                g.day = day;
+                g.minute = 6 * 60;
+                g.setVar("eng.morning", day - 1);
+                g.money = 500 + (day * 37) % 3000;
+                g.rentDebt = 0;
+                g.screen = new MapScreen(g);
+                int callCards = 0, familyCards = 0;
+                frame();
+                for (int n = 0; n < 12 && g.hasDialog(); n++) {
+                    frame();
+                    String who = g.dialogTitle();
+                    if (who.contains("על הקו")) callCards++;
+                    else if (who.startsWith("אמא") || who.startsWith("אבא") || who.contains("סבתא") || who.contains("דודה")) familyCards++;
+                    tap(g.dialogBtns.get(0));
+                }
+                check(!g.hasDialog(), "the morning's messages end");
+                check(callCards <= 2, "day " + day + ": mom's call is two cards at most, got " + callCards);
+                check(callCards == 0 || day % Game.MOM_EVERY_DAYS == 0, "day " + day + ": she calls once a week");
+                // A reply card carries its speaker again, so one family beat is one or two cards.
+                check(familyCards <= 2, "day " + day + ": one unprompted family message at most, got " + familyCards + " cards");
+                int toasts = 0;
+                for (int i = 0; i < 100; i++) if (g.momToast("ate")) toasts++;
+                check(toasts + (familyCards > 0 ? 1 : 0) <= 1, "day " + day + ": a toast or a message, not both");
+                if (callCards > 0) calls++;
+                moments += toasts + (familyCards > 0 ? 1 : 0);
+            }
+            check(calls >= 15, "mom called about every week: " + calls);
+            System.out.printf("  %s: %d weekly calls, %d unprompted family moments in 119 days%n", pass == 0 ? "m" : "f", calls, moments);
+        }
+    }
+
     // ================= checks before any test Mini is registered =================
 
     static void unregistered() {
@@ -959,7 +1108,7 @@ public final class Sim {
     static void vars() {
         fresh();
         check(g.var("fit") == 5 && g.var("cha") == 5 && g.var("edu") == 0 && g.stat(Host.FIT) == 5, "stats start at 5 / 5 / 0");
-        check(g.var("mom.trust") == 50 && g.var("mom.worry") == 50, "mom starts in the middle");
+        check(Math.abs(g.var("mom.trust") - 50) <= 5 && Math.abs(g.var("mom.worry") - 50) <= 5, "mom starts in the middle (the first answer may move her a step)");
         check(g.var("nope") == 0 && !g.flag("nope") && !g.hasVar("nope"), "unset is 0");
         g.setVar("alley.q0", 3);
         g.addVar("alley.q0", 2);
@@ -1050,8 +1199,9 @@ public final class Sim {
         heard.clear();
         startGame("אישה");
         check(heard.get(Sfx.TAP), "taps tick");
-        check(heard.get(Sfx.PHONE), "mom's first message rings");
         closeDialogs();
+        check(heard.get(Sfx.PHONE) == Story.intro(g.facts()).stream().anyMatch(b -> b.speaker.contains("על הקו")),
+                "a message from somebody on the line rings, and only that");
         check(g.musicTrack() == 0, "day music on the map at nine in the morning");
         frame();
         check(g.pollSound() == -1, "a frame empties the queue");
@@ -1585,7 +1735,7 @@ public final class Sim {
         g.setVar("hired.0", 1);
         g.setVar("xp.0", 50);
         check(tapLabel("לישון 8"), "go to sleep");
-        check(drawn().contains("מים מהברז"), "a tip to read while asleep");
+        check(g.save().matches("(?s).*;st=[^;]{10,};.*"), "a tip to read while asleep");
         for (int i = 0; i < 600 && g.screen instanceof SleepScreen; i++) {
             frame();
             if (g.hasDialog()) closeDialogs();
@@ -1600,7 +1750,7 @@ public final class Sim {
         check(text.contains("שכירות ₪900 בעוד 9 ימים"), "rent countdown");
         check(text.contains("5.5") && text.contains("+0.5"), "stat change since the last summary");
         check(text.contains("טבח · מקצוען"), "job and rank");
-        check(text.contains("אמא: יום של עבודה זה יום טוב."), "mom's line");
+        check(text.contains("אמא: ") && !text.contains("[") && !text.contains("{"), "mom's line, with its markup resolved: " + text);
         float minute = g.minute;
         frames(200);
         check(g.minute == minute, "time stands still on the summary");
@@ -1609,6 +1759,11 @@ public final class Sim {
         check(tapLabel("המשך") && g.screen instanceof BuildingScreen && g.at == City.HOME, "and leads back into the flat");
 
         // A nap is not a night: no summary, the counters keep running.
+        // The morning's messages arrive on the first frame in the flat.
+        frame();
+        closeDialogs();
+        g.setVar("day.earned", 0);
+        g.setVar("day.spent", 0);
         g.earn(30);
         g.energy = 50;
         check(tapLabel("תנומה"), "nap");
@@ -1626,7 +1781,6 @@ public final class Sim {
         text = drawn();
         check(g.screen instanceof SummaryScreen && text.contains("+₪30") && text.contains("-₪100") && text.contains("-₪70")
                 && !text.contains("+0.5"), "the second summary starts where the first one ended: " + text);
-        check(text.contains("אמא: יצא יותר ממה שנכנס"), "and mom noticed");
         g.back();
         check(g.screen instanceof BuildingScreen, "back leaves the summary too");
     }
@@ -1705,16 +1859,16 @@ public final class Sim {
         g.minute = 5 * 60 + 55;
         frames(20);
         check(g.hasDialog() && g.endPending && !g.over && g.flag("eng.finale"), "at six the visit begins");
-        check(drawn().contains("גיל, אנחנו למטה!"), "with the story's first beat");
+        check(g.flag("seen.st.fin.arrive") && drawn().contains("121"), "with the story's first beat");
         reload();
         check(g.hasDialog() && g.endPending, "the visit survives a reload");
         closeDialogs();
         frame();
         check(g.over && g.screen instanceof EndScreen && !g.endPending, "when the last message closes the year is over");
-        check(g.endTitle.equals("השנה נגמרה") && g.endReason.contains("שנה שלמה בעיר הגדולה") && g.flag("seen.story.fin.end"),
-                "title and body come from the last finale beat");
+        check(!g.endTitle.isEmpty() && g.endReason.length() > 40 && !g.endReason.contains("{") && !g.endReason.contains("[")
+                && g.varKeys("seen.st.end.").size() == 1, "title and body come from the last finale beat, one ending only");
         String text = drawn();
-        check(text.contains("השנה נגמרה") && text.contains("והחזקת מעמד") && text.contains("₪5000 בכיס") && !text.contains("המשחק נגמר"),
+        check(text.contains(g.endTitle) && text.contains("₪5000 בכיס") && !text.contains("המשחק נגמר"),
                 "the end screen is the 'year is over' one: " + text);
         check(g.musicTrack() == -1, "no music");
         reload();
@@ -1928,6 +2082,7 @@ public final class Sim {
         check(g.day == day + 1 && g.minute == 8 * 60 && g.at == City.HOME && g.screen instanceof MapScreen && g.energy == 45,
                 "released the next morning, at home");
         reload();
+        closeDialogs();
         // The second arrest costs more; arrested after midnight means the same morning.
         enter(City.ALLEY, 2 * 60);
         day = g.day;
@@ -1990,6 +2145,8 @@ public final class Sim {
         frames(5);
         check(g.var("heat") == 25, "heat decays daily");
         g.setVar("heat", 4);
+        // The morning's messages would stop the clock; this check is about midnight only.
+        g.setVar("eng.morning", g.day);
         g.minute = 1439;
         frames(5);
         check(g.var("heat") == 0, "down to zero, not below");
@@ -2064,7 +2221,7 @@ public final class Sim {
 
         // Old saves never had a summary or a morning: the first night and the first morning just work.
         old = loaded(V2.replace("day=4", "day=20") + "dialogs=;scr=map;mt=-1;mf=false;");
-        check(old.var("eng.week") == 2 && !old.hasDialog(), "v2: mom does not catch up on calls that already happened");
+        check(old.var("eng.week") == 2 && !old.dialogTitle().contains("על הקו"), "v2: mom does not catch up on calls that already happened");
         // A save from after the last day goes to the visit on its first calm morning.
         old = loaded(V2.replace("day=4", "day=140") + "dialogs=;scr=map;mt=-1;mf=false;");
         frames(3);
@@ -2238,15 +2395,15 @@ public final class Sim {
         float start = clock();
         check(tapLabel("לישון 8"), "resume: sleep");
         frames(25);
-        String night = drawn();
+        String night = g.save().replaceAll("(?s).*;st=([^;]*);.*", "$1");
         reload();
         check(g.screen instanceof SleepScreen, "resume: still asleep");
+        check(night.length() > 10 && g.save().contains(";st=" + night + ";"), "resume: the same tip is up");
         for (int i = 0; i < 400 && g.screen instanceof SleepScreen; i++) {
             frame();
             closeDialogs();
         }
         check(g.screen instanceof SummaryScreen && Math.abs(clock() - start - 480) < 1, "resume: slept 8 hours in total, got " + (clock() - start));
-        check(night.contains("מים מהברז"), "resume: the tip was up");
         reload();
         check(g.screen instanceof SummaryScreen, "resume: the summary");
         tapLabel("המשך");
