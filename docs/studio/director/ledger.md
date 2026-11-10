@@ -218,3 +218,24 @@ Goal for every phase: the game should feel like a AAA-quality experience (polish
   Main tree `next` = ee50aff (tech director mid-work, DOES NOT COMPILE; last green = 4a1c774: Sim gate ALL OK in <3 s + economy merged).
   Room material survives: 11 papers, 12 threads, story/00-CANON.md (theme, laws, family), critic's age-rating thread.
   Installable build is still 0.1.3 (release tag `latest`). NOT relaunching without the owner's explicit go (asked him; options: all 20 / small team to get a build to his phone first / not now).
+- 09:12-09:15 OWNER: chose "all 20 again", then "but know 10% is left" (taken as his usage budget), then "so give me an updated version meanwhile" and "don't be stingy".
+  DIRECTOR'S CALL: with ~10% left, NOT relaunching the 20-person story studio (would drain the budget with nothing finished). Everything the studio wrote is archived
+  in the repo: docs/studio/ on `next` (commit 4df0478): ledger, context, 20 briefs + last notes, room papers/threads/rulings, story canon.
+  Launched only the PREVIEW BUILD squad (Fable): tech-director acde795d13ef0652f (MAIN TREE: back to green, preview.yml -> release tag `preview`, version 0.2.0-preview,
+  merge all finished minigames + written story/mom/lines + icons/title + character art, "בדיקה" list of all minigames; messages main after steps 2, 3, 5)
+  and shell-audio aecb3e26a10cd2ace (worktree: SoundPlayer + Music wired in the Android shell, audio focus, ACTION_MOVE).
+  My part: on each "step N green" message -> push `next` -> CI builds the preview APK -> send the owner the link
+  https://github.com/Wizzcraft/Ordinary-life/releases/tag/preview . The 20-person studio resumes from docs/studio/director/briefs when budget allows.
+- 09:25 preview pipeline works: run 42774117353 green from a82afd0, release tag `preview` (ima-al-hakav-preview.apk, engine only, no merged minigames yet). Waiting for tech-director 'step 3 green' -> push next -> send owner the link.
+- shell-audio DONE: branch worktree-agent-aecb3e26a10cd2ace commit 067f570 (team/shell-audio): SoundPlayer+Music wired in shell, audio focus, ACTION_MOVE; type-checked on stubs only; told tech-director to merge.
+- 09:45 PREVIEW with 17 minigames built green from 2fa7712 (run 42775356787); link sent to owner. Pushed 202e692 (adds audio shell) for the next build.
+- preview build with audio: see result above (run 42775461950, commit 202e692)
+- 10:00 TECH DIRECTOR DONE (acde795d13ef0652f): `next` head 8812e08 = PREVIEW 0.2.0: 17 minigames from their buildings, "בדיקה" list, school->diploma->office building (doctor/developer),
+  casino+alley menus, written Story/MomLines/Lines live (behind `Say` wrapper; family budget 1/day), title art + building headers + HUD icons + portraits + PersonArt, audio shell merged.
+  Verified by director: compile clean, Sim ALL OK (2.39M checks), contact sheets viewed. Pushed -> preview CI.
+  NOT IN: dish/lawyer/pest/pancake/pastry, casino finishing pass, 3D town, presentation layer, real store, hostel (missed rent twice still ends the game),
+  engine rules (decline call, one-replay, energy prediction, leave shift early, pause menu, frozen clock day 1, autosave points, backup save), Engine section in TEAM.md.
+  KNOWN PROBLEMS: roulette/slots refund on pause; video poker expert bot 101% RTP; stats train too fast (fitness 100 by day 30); Lines uses generic boss names (no portraits) vs Story's
+  רינה/נסים/דנה; office building has no illustration; finale chosen before the dinner answer; old saves get up to 2 unseen beats each morning; Tuning only partly wired.
+  The city map is still the old flat sketch (owner rejected top-down; 3D city branch team/city3d is unfinished).
+- 10:10 FULL PREVIEW built on CI from 8812e08 (run 42777017305), release tag preview; link sent to owner. No agents running. Budget ~10% reported by owner: hold further launches until he says.
