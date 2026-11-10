@@ -209,12 +209,23 @@ final class BuildingScreen extends Screen {
         boolean roomy = hh >= 78, compact = hh >= 56;
         y = Game.HUD_H + (roomy ? 14 : 8);
         if (paint) {
-            int ink = Ui.isDark(b.color) ? Ui.INK : Ui.DARK_INK;
-            c.fillRoundRect(16, y, 328, hh, 12, b.color);
-            c.text(b.name, Game.W / 2, y + (roomy ? 36 : compact ? 26 : 21), roomy ? 26 : compact ? 22 : 18, ink,
-                    Gfx.CENTER);
-            c.text(open ? b.hours() : "סגור עכשיו · " + b.hours(), Game.W / 2, y + (roomy ? 60 : compact ? 44 : 36),
-                    roomy ? 12 : 11, ink, Gfx.CENTER);
+            // The places the artists drew get their picture in the header, on a dark card with the
+            // building's colour as a stripe; a place without a picture keeps the plain coloured header.
+            boolean art = compact && b.id <= City.ALLEY;
+            int ink = art ? Ui.INK : Ui.isDark(b.color) ? Ui.INK : Ui.DARK_INK;
+            float cx = Game.W / 2;
+            if (art) {
+                float size = hh - 14, pw = size * 1.4f;
+                c.fillRoundRect(16, y, 328, hh, 12, Ui.PANEL);
+                c.fillRoundRect(338, y + 8, 4, hh - 16, 2, b.color);
+                Icons.building(c, b.id, 16 + 10 + pw / 2, y + hh / 2, size, g.blink);
+                cx = (16 + 10 + pw + 336) / 2;
+            } else {
+                c.fillRoundRect(16, y, 328, hh, 12, b.color);
+            }
+            c.text(b.name, cx, y + (roomy ? 36 : compact ? 26 : 21), roomy ? 26 : compact ? 22 : 18, ink, Gfx.CENTER);
+            c.text(open ? b.hours() : "סגור עכשיו · " + b.hours(), cx, y + (roomy ? 60 : compact ? 44 : 36),
+                    roomy ? 12 : 11, art ? Ui.DIM : ink, Gfx.CENTER);
         }
         y += hh + (roomy ? 14 : 8);
         menu(open);

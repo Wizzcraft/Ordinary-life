@@ -131,7 +131,7 @@ final class Say {
 
     static String shiftStart(Game g, Job job, int rank) {
         try {
-            return str(Lines.shiftStart(job.profession ? -1 : job.id, rank, g.facts(), g.rnd));
+            return str(Lines.shiftStart(lineId(job), rank, g.facts(), g.rnd));
         } catch (RuntimeException e) {
             return "";
         }
@@ -139,17 +139,18 @@ final class Say {
 
     static String shiftEnd(Game g, Job job, float score0to2) {
         try {
-            return str(Lines.shiftEnd(job.profession ? -1 : job.id, score0to2, g.facts(), g.rnd));
+            return str(Lines.shiftEnd(lineId(job), score0to2, g.facts(), g.rnd));
         } catch (RuntimeException e) {
             return "";
         }
     }
 
-    /** The boss on a hire (rank 0) or a promotion. The professions have no written boss yet: no beat. */
+    /** The boss on a hire (rank 0) or a promotion; null when nobody wrote one for that job. */
     static Beat promotion(Game g, Job job, int rank) {
-        if (job.profession) return null;
+        int id = lineId(job);
+        if (id < 0) return null;
         try {
-            return Lines.promotion(job.id, rank, g.facts());
+            return Lines.promotion(id, rank, g.facts());
         } catch (RuntimeException e) {
             return null;
         }
@@ -169,6 +170,15 @@ final class Say {
         } catch (RuntimeException e) {
             return "";
         }
+    }
+
+    /**
+     * The writers number the workplaces 0..5 like the jobs, then 6 doctor, 7 lawyer, 8 developer;
+     * -1 (their "somewhere") for a job they do not know.
+     */
+    static int lineId(Job job) {
+        if (!job.profession) return job.id <= Job.CASHIER ? job.id : -1;
+        return job.id == Job.DOCTOR ? 6 : job.id == Job.DEV ? 8 : -1;
     }
 
     private static String str(String s) {

@@ -2573,9 +2573,11 @@ public final class Sim {
                 g.setVar("hired." + j.id, 1);
                 g.addVar("xp." + j.id, r.nextInt(50));
                 g.energy = 40 + r.nextInt(60);
-                stand(j.building);
                 Screen s = ShiftScreen.open(g, j);
-                if (s != null) g.screen = s;
+                if (s != null) {
+                    stand(j.building);
+                    g.screen = s;
+                }
                 break;
             }
             case 2: {
@@ -2584,9 +2586,11 @@ public final class Sim {
                 break;
             }
             case 3: {
-                stand(b);
                 Screen s = VenueScreen.open(g, r.nextBoolean() ? "alley" : "sim.venue", b);
-                if (s != null) g.screen = s;
+                if (s != null) {
+                    stand(b);
+                    g.screen = s;
+                }
                 break;
             }
             case 4:

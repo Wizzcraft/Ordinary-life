@@ -829,9 +829,9 @@ public final class Game {
         c.text("יום " + day + " · חודש " + month, W - 14, 25, 13, Ui.DIM, Gfx.RIGHT);
         c.text(Ui.clock(minute), W / 2, 27, 22, Ui.INK, Gfx.CENTER);
         c.text(Ui.nis(money), 14, 26, 17, money < 0 ? Ui.BAD : Ui.ACCENT, Gfx.LEFT);
-        meter(c, 244, "אוכל", food, Ui.ORANGE);
-        meter(c, 130, "מים", water, Ui.BLUE);
-        meter(c, 16, "אנרגיה", energy, Ui.GOOD);
+        meter(c, 244, "food", "אוכל", food, Ui.ORANGE);
+        meter(c, 130, "water", "מים", water, Ui.BLUE);
+        meter(c, 16, "energy", "אנרגיה", energy, Ui.GOOD);
         c.text(rentLine(), W / 2, 81, 12, rentWorry() ? Ui.BAD : Ui.DIM, Gfx.CENTER);
     }
 
@@ -845,12 +845,30 @@ public final class Game {
         return daysToRent() <= 2 && money < rentDue();
     }
 
-    private void meter(Gfx c, float x, String label, float v, int col) {
+    private void meter(Gfx c, float x, String icon, String label, float v, int col) {
         boolean low = v < 20;
         int lc = low && ((int) (blink * 3) % 2 == 0) ? Ui.BAD : Ui.DIM;
-        c.text(label, x + 100, 47, 11, lc, Gfx.RIGHT);
+        Icons.draw(c, icon, x + 93, 42, 14, low ? Ui.BAD : 0);
+        c.text(label, x + 83, 47, 11, lc, Gfx.RIGHT);
         c.text(String.valueOf((int) Math.ceil(v)), x, 47, 11, lc, Gfx.LEFT);
         Ui.bar(c, x, 53, 100, 8, v / 100f, low ? Ui.BAD : col);
+    }
+
+    /** Room kept above a card for the speaker's portrait. */
+    private static final float PORTRAIT_ROOM = 46;
+    /** Who is who: a word of the speaker's name, and the portrait PersonArt draws for it. */
+    private static final String[][] FACES = {
+            {"אמא", "mom"}, {"אבא", "dad"}, {"שמעון", "landlord"}, {"רינה", "boss"}, {"נסים", "baker"},
+            {"דנה", "barowner"}, {"גבי", "gasman"}, {"פרץ", "manager"}, {"מזל", "neighbour"}, {"רפאל", "dealer"},
+            {"אלמוג", "cop"}, {"שוטר", "cop"}, {"מנהלת המשמרת", "boss"}, {"בעל התחנה", "gasman"},
+            {"מנהל הסניף", "manager"},
+    };
+
+    /** The portrait id for a speaker, or null for a narrator, a notice or somebody without a drawn face. */
+    static String portraitOf(String speaker) {
+        if (speaker == null || speaker.isEmpty()) return null;
+        for (String[] f : FACES) if (speaker.contains(f[0])) return f[1];
+        return null;
     }
 
     private void drawDialog(Gfx c) {
@@ -862,21 +880,30 @@ public final class Game {
         float buttons = n == 0 ? 48 : n * bh + (n - 1) * gap;
         // A long text shrinks until the whole card, buttons included, fits the screen.
         float size = 15, frame = 58 + 14 + buttons + 18;
+        // A speaker with a face gets it above the card; the card makes room for it.
+        String face = portraitOf(d.title);
+        float headroom = face == null ? 0 : PORTRAIT_ROOM;
         List<String> lines = Ui.wrap(c, d.body, tw, size);
-        while (size > 11 && frame + lines.size() * size * 1.4f > h - 24) {
+        while (size > 11 && frame + lines.size() * size * 1.4f > h - 24 - headroom) {
             size -= 1;
             lines = Ui.wrap(c, d.body, tw, size);
         }
         // A text far beyond the agreed length is cut rather than allowed to push the buttons off screen.
-        int room = Math.max(1, (int) ((h - 16 - frame) / (size * 1.4f)));
+        int room = Math.max(1, (int) ((h - 16 - headroom - frame) / (size * 1.4f)));
         if (lines.size() > room) {
             lines = new ArrayList<>(lines.subList(0, room));
             lines.set(room - 1, lines.get(room - 1) + "...");
         }
         float ph = frame + lines.size() * size * 1.4f;
-        float py0 = Math.max(8, (h - ph) / 2);
+        float py0 = Math.max(8 + headroom, (h - ph + headroom) / 2);
         c.fillRoundRect(px0, py0, pw, ph, 16, Ui.PANEL);
         c.strokeRoundRect(px0, py0, pw, ph, 16, 1.5f, Ui.PANEL2);
+        if (face != null) {
+            float fy = py0 - 14;
+            c.fillCircle(W / 2, fy, 35, Ui.PANEL2);
+            c.fillCircle(W / 2, fy, 33, Ui.PANEL);
+            PersonArt.portrait(c, face, W / 2, fy + 2, 60, blink);
+        }
         c.text(d.title, W / 2, py0 + 36, Ui.fit(c, d.title, tw, 20), Ui.ACCENT, Gfx.CENTER);
         float y = py0 + 53 + size;
         for (String line : lines) {
