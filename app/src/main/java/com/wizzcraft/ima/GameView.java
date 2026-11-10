@@ -16,6 +16,8 @@ public final class GameView extends View {
     private boolean running = true;
     private float scale = 1f;
     private float offsetX;
+    /** DEVICE-LAB HOOK (docs/DEVICE_LAB.md): set only by TourDriver.attach; null in normal play. */
+    TourDriver tour;
 
     public GameView(Context context) {
         super(context);
@@ -61,6 +63,7 @@ public final class GameView extends View {
         float logicalH = usableH / scale;
 
         game.update(dt, logicalH);
+        if (tour != null) tour.frame(dt, offsetX, insetTop, scale); // DEVICE-LAB HOOK
 
         canvas.drawColor(0xFF12161C);
         canvas.save();

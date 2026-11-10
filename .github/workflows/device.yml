@@ -1,0 +1,114 @@
+name: device-lab
+
+# Boots an Android emulator, plays the in-app tour, exercises save/resume, runs monkey, and uploads
+# screenshots and logs. Publishes nothing but workflow artifacts. See docs/DEVICE_LAB.md.
+on:
+  push:
+    branches: [ci-lab]
+  workflow_dispatch:
+    inputs:
+      tour:
+        description: Tour name (Tour.create)
+        default: smoke
+      monkey_events:
+        description: Monkey events
+        default: '3000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_LEVEL: '35'
+  TARGET: google_apis
+  ARCH: x86_64
+  PROFILE: pixel_6
+  EMU_OPTS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Desktop tour (same tour, no emulator)
+        run: |
+          javac --release 17 -d tools/out/classes app/src/main/java/com/wizzcraft/ima/core/*.java tools/desktop/com/wizzcraft/ima/core/*.java
+          java -Djava.awt.headless=true -cp tools/out/classes com.wizzcraft.ima.core.TourLab "${{ inputs.tour || 'smoke' }}" lab-out/desktop
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}-${{ env.TARGET }}-${{ env.ARCH }}-${{ env.PROFILE }}-v1
+
+      - name: Create AVD and snapshot for the cache
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          profile: ${{ env.PROFILE }}
+          force-avd-creation: false
+          emulator-options: ${{ env.EMU_OPTS }}
+          disable-animations: false
+          script: echo "AVD snapshot generated"
+
+      - name: Device lab
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          TOUR: ${{ inputs.tour || 'smoke' }}
+          MONKEY_EVENTS: ${{ inputs.monkey_events || '3000' }}
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          profile: ${{ env.PROFILE }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save ${{ env.EMU_OPTS }}
+          disable-animations: true
+          script: bash tools/device/lab.sh app/build/outputs/apk/debug/app-debug.apk lab-out
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo '### Device lab'
+            echo '```'
+            cat lab-out/device.txt lab-out/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat lab-out/summary.txt 2>/dev/null || true
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-lab-${{ github.run_number }}
+          path: |
+            lab-out/
+            app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+          if-no-files-found: warn

@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
 
         SharedPreferences sp = getSharedPreferences("save", MODE_PRIVATE);
         view.game.load(sp.getString("state", null));
+        TourDriver.attach(view, getIntent()); // DEVICE-LAB HOOK (docs/DEVICE_LAB.md)
 
         view.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
