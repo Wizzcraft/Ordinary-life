@@ -100,7 +100,8 @@ def walk_min(home, a, b):
     return path_len(DOORS[a], DOORS[b]) / T.WALK_SPEED
 
 
-JOB_PLACE = ['centre', 'centre', 'bakery', 'bar', 'gas', 'market']
+# Where each job's shift happens (the exterminator's van leaves from the gas station).
+JOB_PLACE = ['centre', 'centre', 'bakery', 'bar', 'gas', 'market', 'centre', 'gas', 'centre', 'bakery']
 FOOT, BUS, BIKE, SCOOTER, TAXI = range(5)
 
 
@@ -137,7 +138,7 @@ class P:
         self.owned = {FOOT}
         self.fuel = 0
         self.job = None
-        self.xp = [0.0] * 6
+        self.xp = [0.0] * len(T.JOB_PAY)
         self.pro, self.pro_xp = None, 0.0
         self.school, self.sessions = None, 0
         self.heat, self.record, self.arrests = 0.0, 0, 0
@@ -424,6 +425,9 @@ class P:
         hourly = (T.PRO_PAY[self.pro] if pro else T.JOB_PAY[j]) * T.RANK_PAY[rank]
         wage = hourly * T.SHIFT_HOURS * avg
         self.earn(wage, 'pro' if pro else 'wage')
+        if not pro and self.s.extras:
+            # Optional extras inside the job: whatever the player squeezes out, capped per day.
+            self.earn(wage * min(T.EXTRAS_DAILY_BONUS_CAP, self.s.extras), 'wage')
         if not pro and T.JOB_TIPS[j]:
             self.earn(T.JOB_PAY[j] * T.SHIFT_HOURS * avg * (T.TIP_BASE + self.cha * T.TIP_PER_CHA), 'tips')
         gain = (T.XP_BASE + T.XP_PER_SCORE * score / rounds) * (1 + self.edu * T.EDU_XP_BONUS)
@@ -701,6 +705,7 @@ class Strategy:
     visit_prep = True
     sell_at, buy_at, bet_frac, sell_gain = 1.15, 0.8, 0.1, 1.3
     use_front = False
+    extras = 0.0  # share of shift pay chased in optional job extras (capped by Tuning)
     rest_below = 55
 
     def fire_sale(self, p):
@@ -816,6 +821,7 @@ class Unskilled(Strategy):
 class Steady(Strategy):
     """Competent cook. Bicycle when it is affordable, mid flat when the landlord says yes."""
     name = 'steady'
+    extras = 0.05
 
     def day(self, p):
         self.housekeeping(p)
@@ -830,23 +836,25 @@ class Steady(Strategy):
 class Expert(Steady):
     name = 'expert'
     skill = 1.0
+    extras = 0.2  # tries every side mode; the cap holds it to +10%
 
 
 class Hopper(Strategy):
     """Chases the best hourly rate: trains charisma with evenings out, moves cashier -> waiter -> barman."""
     name = 'hopper'
+    extras = 0.05
     bus = True
 
     def best_job(self, p):
         best, bv = 0, -1
-        for j in range(6):
+        for j in range(len(T.JOB_PAY)):
             st = T.JOB_NEED_STAT[j]
             if st != T.NONE and (p.fit, p.cha, p.edu)[st] < T.JOB_NEED_VALUE[j]:
                 continue
             v = T.JOB_PAY[j] * T.RANK_PAY[p.rank(p.xp[j])] * (
                 1 + (T.TIP_BASE + p.cha * T.TIP_PER_CHA if T.JOB_TIPS[j] else 0))
-            if j == 2:
-                v *= 0.9  # 2:15 a.m. alarm from the far flat
+            if j in (2, 8):
+                v *= 0.9  # a pre-dawn alarm from the far flat
             if v > bv:
                 best, bv = j, v
         return best

@@ -16,8 +16,8 @@ The target curve, and what the model shows (medians of 200 runs, cash after that
 | Target | Model result |
 |---|---|
 | Honest unskilled newcomer only just makes the first rent | `unskilled` ends month 1 with **₪190**; 8% of runs miss the first rent |
-| Competent worker saves ₪300–600 a month early on | `steady` saves 288 / 206 / (bike) / 495 / 679 in months 1–5 |
-| Month 4: mid flat **or** school, not both | `steady` has about ₪1,900 by month 4 before the bike. Moving costs ₪1,450 up front, the first half of developer school ₪1,200 |
+| Competent worker saves ₪300–600 a month early on | `steady` (+5% from optional extras) saves 369 / 62 (bike) / 402 / 625 / 700 in months 1–5 |
+| Month 4: mid flat **or** school, not both | `steady` has ₪1,483 by month 4 after buying the bike. Moving costs ₪1,450 up front, the first half of developer school ₪1,200 |
 | Professions pay 3–4× an entry job by month 8 | developer at month 8 earns **3.7×** the cook's rank-0 hourly rate (3.1× on day one, ranks do the rest) |
 | Crime ~3× faster, about 1 arrest in 3 months for a greedy player | greedy alley: **2.1×** per hour counting the wait for 22:00, ~10× per hour actually in the alley, **2×** per month. Arrests 0.25 per active month (21% of all months) |
 | The casino loses on average | gambler: casino net **−₪3,745** median over the year (mean −2,205); 18% end the year ahead |
@@ -69,6 +69,16 @@ round multiplier. XP per shift = 4 + 8 × average round score (0..2), +0.5% per 
 | Barman | 22 | 19:00–21:00 | cha 30 | charisma | 6 | yes | the best non-degree career (2.2× entry by month 8); night shift leaves days free for school |
 | Gas attendant | 16 | any hour | none | fitness | 7 | no | lowest pay, always available, 1.5 h from the far flat: the fallback |
 | Cashier | 18 | 07:00–14:00 | none | charisma | 4 | no | the easy-on-energy job: the one to combine with studying |
+| Dishwasher (restaurant) | 15 | 08:00–18:00 | none | fitness | 6 | no | the lowest rung: wide window, no questions asked, the safety net after a bad month |
+| Exterminator (night call; van at the gas station) | 24 | 21:00–23:00 | fit 25 | fitness | 6 | no | best untipped rate for nights: competes with the alley for the same hours, honestly |
+| Pancake cook (restaurant, breakfast) | 20 | 05:30–07:00 | fit 10 | charisma | 6 | no | a cook's pay +1 for an early alarm; frees the afternoon for school |
+| Pastry decorator (bakery) | 22 | 08:00–12:00 | edu 25 | charisma | 4 | no | the reward for a few evening courses: good pay, easy on energy |
+
+**One core minigame per job.** The core minigame earns the whole wage. Optional extras inside a
+job (side modes, events, bonus orders) are never required, and all of them together add at most
+`EXTRAS_DAILY_BONUS_CAP` = **+10%** of that day's shift pay. That keeps a player who ignores them
+on the curve above, and keeps a min-maxer from breaking it. The model gives the steady worker and
+the hopper +5% and the expert a capped +10%.
 
 | Constant | Value | Why |
 |---|---|---|
@@ -160,7 +170,7 @@ a price move while the screen is open.
 
 Greedy (seven nights in ten, sells at +15%, uses the front) vs careful (three nights in ten, keeps
 the job, only fat margins): from month 4, greedy earns about ₪4,000–4,500 a month against the steady cook's
-₪2,090, and is arrested in 21% of months. The year ends with a median of ₪1,481 but a 10th
+₪2,090 (before extras), and is arrested in 21% of months. The year ends with a median of ₪1,481 but a 10th
 percentile of **−₪11,436** (debt). Careful earns ₪13,000 a year on the side with 0.29 arrests.
 
 ## 11. The casino (20:00–04:00)
@@ -199,9 +209,9 @@ the visit into a budget question (open question 4).
 | careless newcomer | 0 | −230 | −1,652 | −2,497 | −2,291 | −7,650 | 100% | 100% | 27 | 1,317 |
 | comeback (careless 2 months, then disciplined) | 0 | −167 | 1,012 | 2,096 | 3,591 | 2,825 | 100% | 96% | 5 | 1,913 |
 | honest unskilled | 190 | 23 | 195 | 656 | 745 | 436 | 29% | 0% | 0 | 1,581 |
-| steady worker (cook, bike, mid flat) | 588 | 745 | 1,122 | 768 | 955 | 701 | 0% | 0% | 0 | 2,080 |
-| expert cook (skill 1.0) | 932 | 727 | 978 | 3,281 | 3,714 | 3,275 | 0% | 0% | 0 | 2,503 |
-| job-hopper (charisma → waiter → barman) | 310 | 295 | 688 | 2,762 | 4,961 | 4,259 | 0% | 0% | 0.3 | 3,009 |
+| steady worker (cook, bike, mid flat, +5% extras) | 669 | 615 | 1,483 | 1,362 | 1,862 | 1,331 | 0% | 0% | 0 | 2,184 |
+| expert cook (skill 1.0, extras capped at +10%) | 1,138 | 1,107 | 1,673 | 5,031 | 6,330 | 5,866 | 0% | 0% | 0 | 2,762 |
+| job-hopper (best rate it qualifies for, +5% extras) | 377 | 430 | 594 | 3,526 | 4,535 | 3,913 | 0% | 0% | 0 | 2,759 |
 | student, developer | 531 | 331 | 835 | 2,094 | 5,835 | 4,436 | 26% | 0% | 0 | 5,625 |
 | student, lawyer | 388 | 0 | 637 | 544 | 650 | 0 | 34% | 0% | 0 | 2,064 |
 | greedy alley trader | 602 | 0 | 0 | 0 | 1,481 | −11,436 | 80% | 57% | 9 | 4,156 |
@@ -229,6 +239,9 @@ per month, progress, spending, per-hour pay) is printed by the model.
 6. **Tax needs a payslip moment** (mom will have opinions). Without UI it will feel like a bug.
 7. Not modelled: the doctor path, the scooter, the taxi, the front's 5-day deadline and its
    scuffle ×3, the VIP table, mom's trust and worry.
+8. **Fitness gates are weak.** Walking alone takes fitness past 25 in month 2, so the hopper jumps to
+   exterminator (₪24/h) and skips the barman route. If the barman is meant to be the top non-degree
+   career, halve `FIT_PER_WALK_HOUR` or raise the exterminator gate to 40.
 
 ## 16. Open questions for the director
 

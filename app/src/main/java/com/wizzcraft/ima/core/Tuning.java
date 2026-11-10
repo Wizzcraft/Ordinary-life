@@ -68,20 +68,29 @@ final class Tuning {
     static final float FIT_ESCAPE = 0.002f;
 
     // =============================== jobs ===============================
-    // Job ids: 0 cook, 1 waiter, 2 baker, 3 barman, 4 gas attendant, 5 cashier. Every shift is 8 game hours.
+    // Job ids: 0 cook, 1 waiter, 2 baker, 3 barman, 4 gas attendant, 5 cashier, 6 dishwasher,
+    // 7 exterminator, 8 pancake cook, 9 pastry decorator. Every shift is 8 game hours.
+    // Buildings: 0,1,6,8 restaurant · 2,9 bakery · 3 bar · 4 gas station · 5 market · 7 night call
+    // (the van leaves from the gas station; the job happens at the client's).
     static final float SHIFT_HOURS = 8f;
     /** Hourly pay at rank 0. Waiter and barman are low on paper because tips come on top. */
-    static final int[] JOB_PAY = {19, 17, 21, 22, 16, 18};
+    static final int[] JOB_PAY = {19, 17, 21, 22, 16, 18, 15, 24, 20, 22};
     /** Window in which a shift may START (minutes of the day); from == to means any hour. */
-    static final int[] JOB_FROM = {8 * 60, 10 * 60, 4 * 60 + 30, 19 * 60, 0, 7 * 60};
-    static final int[] JOB_TO = {16 * 60, 16 * 60, 6 * 60, 21 * 60, 0, 14 * 60};
+    static final int[] JOB_FROM = {8 * 60, 10 * 60, 4 * 60 + 30, 19 * 60, 0, 7 * 60, 8 * 60, 21 * 60, 5 * 60 + 30, 8 * 60};
+    static final int[] JOB_TO = {16 * 60, 16 * 60, 6 * 60, 21 * 60, 0, 14 * 60, 18 * 60, 23 * 60, 7 * 60, 12 * 60};
     /** Energy per hour on shift: carrying trays and dough is harder than a till. */
-    static final float[] JOB_ENERGY = {6f, 7f, 7f, 6f, 7f, 4f};
-    static final int[] JOB_NEED_STAT = {NONE, CHA, FIT, CHA, NONE, NONE};
-    static final int[] JOB_NEED_VALUE = {0, 15, 15, 30, 0, 0};
-    static final int[] JOB_TRAINS = {FIT, CHA, FIT, CHA, FIT, CHA};
+    static final float[] JOB_ENERGY = {6f, 7f, 7f, 6f, 7f, 4f, 6f, 6f, 6f, 4f};
+    static final int[] JOB_NEED_STAT = {NONE, CHA, FIT, CHA, NONE, NONE, NONE, FIT, FIT, EDU};
+    static final int[] JOB_NEED_VALUE = {0, 15, 15, 30, 0, 0, 0, 25, 10, 25};
+    static final int[] JOB_TRAINS = {FIT, CHA, FIT, CHA, FIT, CHA, FIT, FIT, CHA, CHA};
     /** 1 = service job with tips. */
-    static final int[] JOB_TIPS = {0, 1, 0, 1, 0, 0};
+    static final int[] JOB_TIPS = {0, 1, 0, 1, 0, 0, 0, 0, 0, 0};
+    /**
+     * Each job has ONE core minigame that earns the wage. Optional extras inside a job (side modes,
+     * events, bonus orders) are never required, and all of them together add at most this share of
+     * that day's shift pay.
+     */
+    static final float EXTRAS_DAILY_BONUS_CAP = 0.10f;
     /** Tips as a fraction of the shift's base pay: TIP_BASE + cha * TIP_PER_CHA, times the round multiplier. */
     static final float TIP_BASE = 0.10f, TIP_PER_CHA = 0.004f;
     /** Pay multiplier for a MISS / OK / PERFECT round. */
