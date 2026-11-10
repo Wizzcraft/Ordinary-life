@@ -1,0 +1,393 @@
+# Originality blocklist for tools/originality-check.sh. Maintained by the originality reviewer.
+# Format:  kind | pattern | category | note
+#   kind  en = Latin name, matched case-insensitively as a whole word; spaces, hyphens, apostrophes,
+#              colons and dots in the name match each other or nothing ("Punch-Out" finds "Punchout").
+#         he = Hebrew word or phrase, matched as a whole word, with up to two glued prefixes (ו ה ב כ ל מ ש ד).
+#         re = raw Java regex, case-insensitive (use only when the two kinds above cannot express it).
+#   category  game | studio | character | brand | platform | person
+#   note      free text shown with the hit. A note containing "only a hit in player text" limits the entry to
+#             player-facing strings and shipping documents (for names that are also everyday English words).
+# Where each hit counts: player-facing strings and shipping documents use every entry; other code literals skip
+# the "only a hit in player text" entries; comments and internal documents also skip the platform entries.
+# Add a name whenever a brief, a reference or a review mentions a new work. Never remove one to make a hit
+# go away: mark the line in the code with "originality-ok: <reason>" after the reviewer agrees instead.
+# Common Hebrew words that are also brand names (דלק, פז, עלית, שרק, ספרינג, ויזה, דיסקונט) are left out on purpose:
+# they would drown the report in false hits. Those are covered by the manual read in the release gate.
+
+# ---- Games named in our own handbook and briefs (craft references: never in player-facing text)
+en | Diner Dash | game | PlayFirst / Gamehouse
+he | דיינר דאש | game
+en | Punch-Out | game | Nintendo
+he | פאנץ' אאוט | game
+en | Dope Wars | game
+en | Drug Wars | game
+he | דופ וורס | game
+en | Canabalt | game | Semi Secret Software
+he | קנבלט | game
+en | Papa's Pizzeria | game | Flipline Studios
+re | papa'?s\s+(pizzeria|burgeria|freezeria|cupcakeria|pancakeria|bakeria|taco\s*mia|wingeria|sushiria|donuteria|hot\s*doggeria|cheeseria|pastaria|scooperia) | game | Flipline "Gameria" series
+he | פאפא'ס | game
+en | Papa Louie | character | Flipline
+en | Cooking Mama | game | Office Create
+he | קוקינג מאמה | game
+he | קוקינג מאמא | game
+en | WarioWare | game | Nintendo
+en | Wario | character | Nintendo
+he | וואריו | character
+he | ווריו | character
+en | Tapper | game | Bally Midway
+he | טאפר | game
+en | Right Mix | game | Bartender: The Right Mix
+he | רייט מיקס | game
+en | Bartender: The Right Mix | game
+
+# ---- Games our minigames are closest to, or that the second-pass minigames will invite
+en | Overcooked | game
+en | Cook, Serve, Delicious | game
+en | Cake Mania | game
+en | Burger Shop | game
+en | Order Up | game
+en | Rhythm Heaven | game
+en | Rhythm Tengoku | game
+en | Little Mac | character | Punch-Out
+en | Glass Joe | character | Punch-Out
+en | Doc Louis | character | Punch-Out
+en | Fight Night | game | EA
+en | Kingdom Rush | game | Ironhide
+en | Bloons | game | Ninja Kiwi
+en | Plants vs. Zombies | game | PopCap
+he | צמחים נגד זומבים | game
+en | Ace Attorney | game | Capcom
+en | Phoenix Wright | character | Capcom
+en | Trauma Center | game
+en | Theme Hospital | game
+en | Two Point Hospital | game
+en | Operation | game | Hasbro board game; English word too, only a hit in player text
+en | Crossy Road | game
+en | Subway Surfers | game
+en | Temple Run | game
+en | Jetpack Joyride | game
+en | Pancake Tower | game
+en | Cake Shop | game
+en | Dishwasher | game | also "The Dishwasher: Dead Samurai"; English word, only a hit in player text
+en | Plate Up | game
+en | PlateUp | game
+
+# ---- Life sims and famous titles a reviewer or player would compare us to
+en | BitLife | game | Candywriter
+he | ביטלייף | game
+en | The Sims | game | EA / Maxis
+en | SimCity | game
+he | הסימס | game
+he | סימס | game
+he | סים סיטי | game
+en | Stardew Valley | game
+en | Animal Crossing | game
+en | Tamagotchi | game
+he | טמגוצ'י | game
+en | Game of Life | game | Hasbro board game (also Conway's automaton: check context)
+en | Monopoly | game | Hasbro
+he | מונופול | game
+he | מונופולי | game
+en | Scrabble | game
+he | סקראבל | game
+en | Rummikub | game | Kodkod, Israeli trademark
+he | רמיקוב | game
+en | Taki | game | Israeli card game trademark
+he | טאקי | game
+en | Uno | game | Mattel; also Spanish "one", only a hit in player text
+he | אונו | game
+en | Tetris | game
+he | טטריס | game
+en | Pac-Man | game
+he | פקמן | game
+he | פאקמן | game
+en | Space Invaders | game
+en | Frogger | game
+en | Donkey Kong | game
+en | Super Mario | game
+en | Mario | character
+he | מריו | character
+en | Luigi | character
+he | לואיג'י | character
+en | Zelda | game
+he | זלדה | game
+en | Pokemon | game
+en | Pokémon | game
+he | פוקימון | game
+en | Pikachu | character
+he | פיקאצ'ו | character
+en | Sonic | character | Sega
+he | סוניק | character
+en | Minecraft | game
+he | מיינקראפט | game
+en | Fortnite | game
+he | פורטנייט | game
+en | Candy Crush | game
+he | קנדי קראש | game
+en | Angry Birds | game
+he | אנגרי בירדס | game
+en | Flappy Bird | game
+en | Fruit Ninja | game
+en | Clash of Clans | game
+en | Clash Royale | game
+en | Hay Day | game
+en | FarmVille | game
+en | Grand Theft Auto | game
+en | GTA | game
+he | ג'י טי איי | game
+en | Street Fighter | game
+en | Mortal Kombat | game
+en | Tekken | game
+en | Guitar Hero | game
+en | Wordle | game
+en | Doodle Jump | game
+en | Cut the Rope | game
+en | Zynga Poker | game
+en | Game King | game | IGT video poker cabinet
+
+# ---- Studios and publishers
+en | Nintendo | studio
+he | נינטנדו | studio
+en | Sega | studio
+he | סגה | studio
+en | Capcom | studio
+en | Namco | studio
+en | Konami | studio
+en | Atari | studio
+en | Bally | studio
+en | Midway | studio | English word too, only a hit in player text
+en | Flipline | studio
+en | PlayFirst | studio
+en | GameHouse | studio
+en | Office Create | studio
+en | Majesco | studio
+en | Semi Secret | studio
+en | Vasco Games | studio | Bartender: The Right Mix
+en | Zynga | studio
+en | Rovio | studio
+en | Supercell | studio
+en | Halfbrick | studio
+en | PopCap | studio
+en | Electronic Arts | studio
+en | Maxis | studio
+en | Ubisoft | studio
+en | Activision | studio
+en | Blizzard | studio
+en | Rockstar Games | studio
+en | Mojang | studio
+en | Candywriter | studio
+en | Hasbro | studio
+en | Mattel | studio
+en | Disney | studio
+he | דיסני | studio
+en | Pixar | studio
+en | Marvel | studio
+en | IGT | studio | slot and video poker maker
+en | Aristocrat | studio | slot maker; English word, only a hit in player text
+en | Novomatic | studio
+
+# ---- Characters and mascots
+en | Mickey Mouse | character
+he | מיקי מאוס | character
+en | Homer Simpson | character
+en | Simpsons | character
+he | הסימפסונים | character
+en | SpongeBob | character
+he | בובספוג | character
+en | Shrek | character
+en | Garfield | character
+en | Hello Kitty | character
+en | Barbie | character
+he | ברבי | character
+en | Mr. Bean | character
+he | מר בין | character
+en | Ronald McDonald | character
+en | Kuli Alma | character
+he | קישקשתא | character | Israeli children's TV
+he | בוב הבנאי | character
+he | פאוור ריינג'רס | character
+he | פיטר פן | character | public domain in places; use only on purpose
+
+# ---- Food, drink and shop brands (Israel and worldwide)
+en | Coca-Cola | brand
+en | Coke | brand
+he | קוקה קולה | brand
+he | קוקה-קולה | brand
+en | Pepsi | brand
+he | פפסי | brand
+en | Sprite | brand | English word too, only a hit in player text
+he | ספרייט | brand
+en | Fanta | brand
+he | פאנטה | brand
+en | Red Bull | brand
+he | רד בול | brand
+en | Schweppes | brand
+he | שוופס | brand
+en | Tempo | brand | Israeli drinks company; English word too, only a hit in player text
+en | Prigat | brand
+he | פריגת | brand
+en | Tapuzina | brand
+he | תפוזינה | brand
+en | Goldstar | brand
+he | גולדסטאר | brand
+he | גולדסטר | brand
+en | Maccabee | brand | beer
+he | מכבי | brand | beer and sports clubs; check context
+en | Carlsberg | brand
+he | קרלסברג | brand
+en | Heineken | brand
+he | הייניקן | brand
+en | Tuborg | brand
+he | טובורג | brand
+en | Jack Daniel's | brand
+he | ג'ק דניאלס | brand
+en | Johnnie Walker | brand
+he | ג'וני ווקר | brand
+en | Absolut | brand
+he | אבסולוט | brand
+en | Smirnoff | brand
+he | סמירנוף | brand
+en | Bacardi | brand
+he | בקרדי | brand
+en | Jägermeister | brand
+en | Jagermeister | brand
+he | יגרמייסטר | brand
+en | Baileys | brand
+he | ביילייס | brand
+en | Martini | brand | also a cocktail name, only a hit in player text
+en | Aperol | brand
+he | אפרול | brand
+en | Kahlua | brand
+en | Starbucks | brand
+he | סטארבקס | brand
+en | McDonald's | brand
+he | מקדונלד'ס | brand
+he | מקדונלדס | brand
+he | מקדונלד | brand
+en | Burger King | brand
+he | בורגר קינג | brand
+en | KFC | brand
+en | Domino's | brand
+he | דומינו'ס | brand
+he | דומינוס | brand
+en | Pizza Hut | brand
+he | פיצה האט | brand
+en | Subway | brand | English word too, only a hit in player text
+en | Nutella | brand
+he | נוטלה | brand
+en | Bamba | brand
+he | במבה | brand
+en | Bissli | brand
+he | ביסלי | brand
+en | Krembo | brand | Strauss trademark; generic in speech
+en | Tnuva | brand
+he | תנובה | brand
+en | Osem | brand
+he | אסם | brand
+en | Elite | brand | English word too, only a hit in player text
+en | Strauss | brand
+he | שטראוס | brand
+en | Shufersal | brand
+he | שופרסל | brand
+en | Rami Levy | brand
+he | רמי לוי | brand
+en | Victory | brand | Israeli supermarket; English word too, only a hit in player text
+en | Super-Pharm | brand
+he | סופר פארם | brand
+en | Aroma | brand | Israeli café chain; English word too, only a hit in player text
+he | ארומה | brand
+he | קפה קפה | brand
+en | Arcaffe | brand
+he | ארקפה | brand
+en | Landwer | brand
+he | לנדוור | brand
+en | Max Brenner | brand
+he | מקס ברנר | brand
+en | Sonol | brand | fuel
+he | סונול | brand
+en | Dor Alon | brand | fuel
+he | דור אלון | brand
+en | Delek | brand | fuel; the Hebrew word means "fuel", so only the Latin form is listed
+en | Paz | brand | fuel
+en | Ikea | brand
+he | איקאה | brand
+en | Zara | brand
+he | זארה | brand
+en | Castro | brand
+he | קסטרו | brand
+en | Nike | brand
+he | נייקי | brand
+en | Adidas | brand
+he | אדידס | brand
+en | Crocs | brand
+en | Lego | brand
+he | לגו | brand
+en | Converse | brand | English word too, only a hit in player text
+
+# ---- Tech, media and money brands
+en | Google | platform | in-app purchase text: let Play's own sheet name itself
+he | גוגל | platform | in-app purchase text: let Play's own sheet name itself
+en | Android | platform
+he | אנדרואיד | platform
+en | iPhone | brand
+he | אייפון | brand
+en | Samsung | brand
+he | סמסונג | brand
+en | WhatsApp | brand
+he | וואטסאפ | brand
+he | ווטסאפ | brand
+he | ווצאפ | brand
+en | Facebook | brand
+he | פייסבוק | brand
+en | Instagram | brand
+he | אינסטגרם | brand
+en | TikTok | brand
+he | טיקטוק | brand
+he | טיק טוק | brand
+en | YouTube | brand
+he | יוטיוב | brand
+en | Netflix | brand
+he | נטפליקס | brand
+en | Spotify | brand
+he | ספוטיפיי | brand
+en | Waze | brand
+he | וויז | brand
+en | Wolt | brand
+he | וולט | brand
+en | Uber | brand
+en | Gett | brand
+en | Mastercard | brand
+he | מאסטרקארד | brand
+en | Isracard | brand
+he | ישראכרט | brand
+en | PayPal | brand
+en | Bit | brand | Israeli payment app; English word too, only a hit in player text
+he | מפעל הפיס | brand
+en | Egged | brand
+he | אגד | brand
+he | רכבת ישראל | brand
+en | Rav-Kav | brand
+he | רב קו | brand
+en | Leumi | brand
+he | בנק לאומי | brand
+he | בנק הפועלים | brand
+
+# ---- Real people (the manual read covers the rest; add any name a writer or tester notices)
+en | Elvis | person
+en | Michael Jackson | person
+en | Messi | person
+he | מסי | person
+en | Ronaldo | person
+he | רונאלדו | person
+en | Taylor Swift | person
+en | Netanyahu | person
+he | נתניהו | person
+en | Eyal Golan | person
+he | אייל גולן | person
+en | Omer Adam | person
+he | עומר אדם | person
+en | Noa Kirel | person
+he | נועה קירל | person
+en | Gal Gadot | person
+he | גל גדות | person

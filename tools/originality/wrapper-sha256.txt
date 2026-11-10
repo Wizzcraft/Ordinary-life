@@ -1,0 +1,4 @@
+# Published SHA-256 checksums of official gradle-wrapper.jar files, copied from https://gradle.org/release-checksums/
+# (checked 2026-11-10). Add a line when the wrapper is regenerated, after checking the value on that page.
+7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  Gradle 8.14 - 8.14.5 (the jar committed today)
+498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  Gradle 8.9 (matches the distribution the wrapper downloads)
