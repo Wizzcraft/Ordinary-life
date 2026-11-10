@@ -1,0 +1,4 @@
+# Text-lint findings that are correct as written (by design, not bugs). One per line:
+#   <rule>:<File>:<fingerprint or *> | reason
+# The key is printed with every finding. Bugs do NOT go here: they go to known-issues.txt with a bug id.
+final:NameScreen:* | the on-screen keyboard rows are letters, not words

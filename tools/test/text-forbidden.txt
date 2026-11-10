@@ -1,0 +1,16 @@
+# Words that must never appear in player-facing Hebrew text. One per line: word | reason.
+# The lint matches whole words, also behind the prefixes ו ב ל ה מ כ ש. Owner: the language editor
+# (add freely); the gate fails on any hit. '#' starts a comment.
+
+# Handbook: substances are never named; the alley sells "סחורה" and nothing else.
+סמים | substances are never named (handbook: "סחורה")
+קוקאין | substances are never named
+הרואין | substances are never named
+חשיש | substances are never named
+גראס | substances are never named
+מריחואנה | substances are never named
+קנאביס | substances are never named
+אקסטזי | substances are never named
+ג'וינט | substances are never named
+סטלן | substances are never named
+מסטול | substances are never named

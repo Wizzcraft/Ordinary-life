@@ -229,12 +229,20 @@ public final class T {
         pool.shutdown();
         for (Case c : serial) run(c);
 
-        int pass = 0, fail = loadErrors.size();
+        Known known = Known.load("unit");
+        int pass = 0, fail = loadErrors.size(), knownFails = 0;
+        List<String> newFails = new ArrayList<>();
+        for (String e : loadErrors) newFails.add("cannot load " + e);
         for (Case c : all) {
             boolean ok = c.status.equals("PASS");
+            String bug = ok ? null : known.bug(c.id());
             if (ok) pass++;
-            else fail++;
-            System.out.printf("%-5s  %-48s %6d ms%n", c.status, c.id(), c.ms);
+            else if (bug != null) knownFails++;
+            else {
+                fail++;
+                newFails.add(c.id());
+            }
+            System.out.printf("%-5s  %-48s %6d ms%s%n", bug != null ? "KNOWN" : c.status, c.id(), c.ms, bug != null ? "  " + bug : "");
             if (!ok) System.out.println(indent(describe(c.error)));
         }
         synchronized (WARNINGS) {
@@ -252,9 +260,13 @@ public final class T {
                 }
             }
         }
-        System.out.printf("%n%s: %d passed, %d failed, %d total, %d ms wall (%d thread%s)%n",
-                fail == 0 ? "TESTS OK" : "TESTS FAILED", pass, fail, all.size() + loadErrors.size(),
+        System.out.printf("%n%s: %d passed, %d failed, %d known, %d total, %d ms wall (%d thread%s)%n",
+                fail == 0 ? "TESTS OK" : "TESTS FAILED", pass, fail, knownFails, all.size() + loadErrors.size(),
                 (System.nanoTime() - t0) / 1_000_000, used, used == 1 ? "" : "s");
+        for (String st : known.stale()) System.out.println("note: known issue no longer fails, remove it from known-issues.txt: unit " + st);
+        // The one line tools/check.sh shows for this suite.
+        System.out.println("@@ " + (fail == 0 ? "PASS" : "FAIL") + " | " + pass + " of " + (all.size() + loadErrors.size()) + " tests pass"
+                + (knownFails > 0 ? ", " + knownFails + " known" : "") + (fail > 0 ? "; NEW: " + String.join(", ", newFails) : ""));
         System.out.flush();
         System.exit(fail == 0 ? 0 : 1);
     }
