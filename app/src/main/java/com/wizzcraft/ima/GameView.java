@@ -17,9 +17,30 @@ public final class GameView extends View {
     private float scale = 1f;
     private float offsetX;
 
+    /** Null when audio could not be set up: the game then runs silent. */
+    private SoundPlayer sound;
+
     public GameView(Context context) {
         super(context);
         setFocusable(true);
+        try {
+            sound = new SoundPlayer(context);
+        } catch (Throwable t) {
+            sound = null;
+        }
+    }
+
+    /** The activity is being destroyed: free the audio. */
+    public void release() {
+        SoundPlayer s = sound;
+        sound = null;
+        if (s != null) {
+            try {
+                s.release();
+            } catch (Throwable t) {
+                // nothing left to do
+            }
+        }
     }
 
     public void setInsets(int top, int bottom) {
@@ -31,11 +52,25 @@ public final class GameView extends View {
     public void pause() {
         running = false;
         lastNanos = 0;
+        if (sound != null) {
+            try {
+                sound.pause();
+            } catch (Throwable t) {
+                sound = null;
+            }
+        }
     }
 
     public void resume() {
         running = true;
         lastNanos = 0;
+        if (sound != null) {
+            try {
+                sound.resume();
+            } catch (Throwable t) {
+                sound = null;
+            }
+        }
         postInvalidateOnAnimation();
     }
 
@@ -61,6 +96,7 @@ public final class GameView extends View {
         float logicalH = usableH / scale;
 
         game.update(dt, logicalH);
+        if (sound != null) sound.frame(game);   // plays what this frame queued; never throws
 
         canvas.drawColor(0xFF12161C);
         canvas.save();
@@ -79,6 +115,9 @@ public final class GameView extends View {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 game.down(x, y);
+                break;
+            case MotionEvent.ACTION_MOVE:
+                game.move(x, y);
                 break;
             case MotionEvent.ACTION_UP:
                 game.up(x, y);
