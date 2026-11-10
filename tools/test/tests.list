@@ -1,0 +1,6 @@
+# Optional extra test classes for tools/test: one class name per line, '#' starts a comment.
+#
+# You normally do NOT need this file. Any class named *Test in package com.wizzcraft.ima.core,
+# placed under tools/test/com/wizzcraft/ima/core/, is found automatically, and every
+# "static void testSomething()" method in it runs. Use this list only for a test class whose
+# name does not end in Test. Append your line at the end; each class on its own line.
