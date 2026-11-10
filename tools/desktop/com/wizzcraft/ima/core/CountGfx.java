@@ -10,6 +10,8 @@ final class CountGfx implements Gfx {
     int prims, maxPrims;
     /** The running shift; a frame must hand the surface back unshifted. */
     float dx, dy;
+    /** When set, every text that is drawn is also written down here. */
+    java.util.List<String> texts;
 
     void reset() {
         maxPrims = Math.max(maxPrims, prims);
@@ -50,6 +52,7 @@ final class CountGfx implements Gfx {
     @Override
     public void text(String s, float x, float baselineY, float size, int argb, int align) {
         if (s == null) throw new IllegalArgumentException("null text");
+        if (texts != null) texts.add(s);
         prims++;
     }
 
