@@ -92,19 +92,11 @@ final class Ui {
         return (r * 299 + g * 587 + b * 114) / 1000 < 110;
     }
 
-    /** A little polygon person. (x, y) is where the feet stand; walk > 0 animates the legs. */
+    /**
+     * A little polygon person in the default look with its top tinted {@code col}. (x, y) is where the
+     * feet stand. Kept for old call sites; new code calls {@link PersonArt#draw} with a {@link Look}.
+     */
     static void person(Gfx c, float x, float y, float s, boolean female, float phase, boolean walking, int col) {
-        float swing = walking ? (float) Math.sin(phase * 11) * 2.4f * s : 0;
-        float bob = walking ? Math.abs((float) Math.sin(phase * 11)) * 0.8f * s : 0;
-        int leg = 0xFFD7DDE5;
-        c.line(x - 1.8f * s, y - 6 * s, x - 1.8f * s - swing, y, 1.7f * s, leg);
-        c.line(x + 1.8f * s, y - 6 * s, x + 1.8f * s + swing, y, 1.7f * s, leg);
-        float top = y - 15.5f * s - bob;
-        if (female) {
-            c.fillPoly(new float[]{x - 2.2f * s, top, x + 2.2f * s, top, x + 6 * s, y - 5 * s, x - 6 * s, y - 5 * s}, col);
-        } else {
-            c.fillPoly(new float[]{x - 5 * s, top, x + 5 * s, top, x + 3.6f * s, y - 5.5f * s, x - 3.6f * s, y - 5.5f * s}, col);
-        }
-        c.fillCircle(x, top - 3.4f * s, 3.7f * s, 0xFFF2C9A1);
+        PersonArt.drawTinted(c, x, y, s, female, phase, walking, col);
     }
 }
