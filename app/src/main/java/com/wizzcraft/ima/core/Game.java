@@ -87,7 +87,9 @@ public final class Game {
     Screen screen;
     final Fx fx = new Fx();
     final Host host = new GameHost(this);
-    final Random rnd = new Random();
+    /** For the test harness: when not 0, every new Game draws from a known sequence, so a failure repeats. */
+    static long testSeed;
+    final Random rnd = testSeed != 0 ? new Random(testSeed++) : new Random();
     /** Writes to variables with a malformed key; the harness expects this to stay 0. */
     int badKeys;
     private final ArrayDeque<Msg> dialogs = new ArrayDeque<>();

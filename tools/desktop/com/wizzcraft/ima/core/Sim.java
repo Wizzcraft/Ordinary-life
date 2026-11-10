@@ -123,6 +123,8 @@ public final class Sim {
         if (only != null && !only.contains(name)) return;
         long t0 = System.nanoTime();
         lh = 760;
+        // Every group starts from the same sequence of random numbers, whichever groups ran before it.
+        Game.testSeed = 1_000_003L * (name.hashCode() & 0xFFFF) + 17;
         t.run();
         System.out.printf("%-12s ok (%.1fs)%n", name, (System.nanoTime() - t0) / 1e9);
     }
@@ -706,7 +708,9 @@ public final class Sim {
         tapBuilding(City.CASINO);
         frames(120);
         shot("28-night-map");
+        closeDialogs();
         enter(City.ALLEY, 23 * 60 + 30);
+        closeDialogs();
         shot("29-alley");
         check(tapLabel("שולחן ניסיון"), "enter the alley");
         frames(5);
