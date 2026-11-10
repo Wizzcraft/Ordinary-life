@@ -91,6 +91,11 @@ final class AwtGfx implements Gfx {
         return (float) g2.getFontMetrics().getStringBounds(s, g2).getWidth();
     }
 
+    @Override
+    public void translate(float dx, float dy) {
+        g2.translate(dx, dy);
+    }
+
     void save(String path) throws IOException {
         File f = new File(path);
         f.getParentFile().mkdirs();

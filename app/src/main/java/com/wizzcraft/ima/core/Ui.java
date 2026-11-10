@@ -63,6 +63,19 @@ final class Ui {
         return y;
     }
 
+    /** The text size, at most {@code size}, at which one line fits into maxW. */
+    static float fit(Gfx c, String s, float maxW, float size) {
+        float w = c.textWidth(s, size);
+        return w <= maxW ? size : Math.max(9, size * maxW / w);
+    }
+
+    /** A stat or a stat change with at most one decimal: "5", "5.3", "+0.4". */
+    static String num(float v, boolean signed) {
+        int tenths = Math.round(Math.abs(v) * 10);
+        String s = tenths / 10 + (tenths % 10 == 0 ? "" : "." + tenths % 10);
+        return (v < 0 && tenths > 0 ? "-" : signed ? "+" : "") + s;
+    }
+
     static void bar(Gfx c, float x, float y, float w, float h, float frac, int col) {
         c.fillRoundRect(x, y, w, h, h / 2, 0xFF0B0E12);
         float fw = w * clamp(frac, 0, 1);

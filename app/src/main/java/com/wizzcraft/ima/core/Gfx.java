@@ -25,4 +25,12 @@ public interface Gfx {
     void text(String s, float x, float baselineY, float size, int argb, int align);
 
     float textWidth(String s, float size);
+
+    /**
+     * Shifts everything drawn afterwards by (dx, dy) logical units, on top of any earlier shift;
+     * undo it with translate(-dx, -dy). The game uses it for screen shake only, so a surface that
+     * cannot shift may leave it out.
+     */
+    default void translate(float dx, float dy) {
+    }
 }

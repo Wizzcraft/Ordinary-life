@@ -37,10 +37,15 @@ final class MapScreen extends Screen {
     void update(float dt) {
         t += dt;
         float gm = dt * Game.MIN_PER_SEC * (ff ? FAST : 1);
-        g.advance(gm, path != null ? Game.WALK : Game.IDLE);
+        boolean walking = path != null;
+        float food = g.food, water = g.water, energy = g.energy, minute = g.minute;
+        g.advance(gm, walking ? Game.WALK : Game.IDLE);
         if (g.screen != this) return;
         if (g.hasDialog() || g.food < 12 || g.water < 12 || g.energy < 12) ff = false;
-        float dist = gm * Game.WALK_SPEED;
+        notice(food, water, energy, minute);
+        // Walking is exercise, and a fitter walker covers more ground in the same time.
+        if (walking) g.train(Host.FIT, gm / 60f * Game.FIT_PER_WALK_HOUR);
+        float dist = gm * g.walkSpeed();
         while (path != null && dist > 0) {
             float dx = path[pi] - g.px, dy = path[pi + 1] - g.py;
             float d = (float) Math.sqrt(dx * dx + dy * dy);
@@ -58,33 +63,72 @@ final class MapScreen extends Screen {
         }
     }
 
+    /**
+     * Says something when a need drops low or the night gets late, once per crossing. The values
+     * are the ones from before this frame's time passed.
+     */
+    private void notice(float food, float water, float energy, float minute) {
+        float low = Game.LOW_NEED;
+        if (energy >= low && g.energy < low) {
+            g.sfx(Sfx.BEEP);
+            if (!g.momToast("tired")) g.toast("העיניים נעצמות. כדאי לישון.");
+        } else if (food >= low && g.food < low) {
+            g.sfx(Sfx.BEEP);
+            g.toast("הבטן מקרקרת. כדאי לאכול משהו.");
+        } else if (water >= low && g.water < low) {
+            g.sfx(Sfx.BEEP);
+            g.toast("הגרון יבש. כדאי לשתות.");
+        } else if (minute < 60 && g.minute >= 60) {
+            // One in the morning and still out on the street.
+            g.momToast("night");
+        }
+    }
+
     private void arrive() {
         int id = target;
         path = null;
         target = -1;
         ff = false;
         g.at = id;
+        g.sfx(Sfx.DOOR);
         g.screen = new BuildingScreen(g, id);
+        // Now and then somebody stops you on the way in.
+        if (g.rnd.nextFloat() < Game.STREET_CHANCE) g.play(Lines.street(g.facts(), g.rnd));
     }
 
     @Override
     void down(float x, float y) {
         Btn b = hit(x, y);
         if (b != null) {
-            if (b.id == 0) g.eat();
-            else if (b.id == 1) g.drink();
-            else ff = !ff;
+            if (b.id == 0) {
+                g.eat();
+            } else if (b.id == 1) {
+                g.drink();
+            } else {
+                ff = !ff;
+                g.sfx(Sfx.TAP);
+            }
             return;
         }
         if (y < Game.HUD_H || y > g.h - BAR_H) return;
         float cx = (x - ox) / s, cy = (y - oy) / s;
         for (City.Building bd : City.B) {
             if (Ui.in(cx, cy, bd.x - 6, bd.y - 8, bd.w + 12, bd.h + 16)) {
-                if (g.at == bd.id && path == null) g.screen = new BuildingScreen(g, bd.id);
-                else walkTo(bd.id);
+                if (g.at == bd.id && path == null) {
+                    g.sfx(Sfx.DOOR);
+                    g.screen = new BuildingScreen(g, bd.id);
+                } else {
+                    g.sfx(Sfx.TAP);
+                    walkTo(bd.id);
+                }
                 return;
             }
         }
+    }
+
+    @Override
+    boolean calm() {
+        return true;
     }
 
     /** 0 in daylight, up to 1 in the middle of the night. */

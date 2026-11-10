@@ -31,11 +31,25 @@ abstract class Screen {
     void down(float x, float y) {
     }
 
+    /** The finger moved while down (a drag). */
+    void move(float x, float y) {
+    }
+
     void up(float x, float y) {
     }
 
     /** Android back button. Return true if handled. */
     boolean back() {
+        return false;
+    }
+
+    /** False on screens outside the running game (title, name entry, the end): no music there. */
+    boolean inGame() {
+        return true;
+    }
+
+    /** True where a phone call or a story beat may interrupt: out on the map and inside building menus. */
+    boolean calm() {
         return false;
     }
 
