@@ -28,8 +28,8 @@ jobs:
       IMA_VERSION_NAME: ${{ github.event.inputs.version_name }}
       BUNDLETOOL_VERSION: '1.18.1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -122,6 +122,24 @@ jobs:
           $BTJ get-size total --apks="$RUNNER_TEMP/all.apks" --dimensions=SDK,ABI,SCREEN_DENSITY,LANGUAGE
           } 2>&1 | tee -a out/report.txt
 
+      # Proves the real signing path without the owner's key: a throwaway key made here, used once,
+      # never uploaded. Skipped when the real upload key is configured (the main build used it).
+      - name: Self-test of the upload-key signing path (throwaway key)
+        if: env.IMA_UPLOAD_STORE_FILE == ''
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/throwaway.jks" -alias upload -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass selftest1 -keypass selftest1 -dname "CN=Self Test" > /dev/null 2>&1
+          ./gradlew --no-daemon -q bundleRelease \
+            -Pima.upload.storeFile="$RUNNER_TEMP/throwaway.jks" -Pima.upload.storePassword=selftest1 \
+            -Pima.upload.keyAlias=upload -Pima.upload.keyPassword=selftest1 -Pima.versionCode=7 -Pima.versionName=9.9.9
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          keytool -printcert -jarfile "$AAB" | grep -q "CN=Self Test" && echo "signed with the given upload key: OK"
+          curl -sSfL -o "$RUNNER_TEMP/bt.jar" \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" || exit 0
+          java -jar "$RUNNER_TEMP/bt.jar" dump manifest --bundle="$AAB" | grep -o 'android:versionCode="[0-9]*" android:versionName="[^"]*" package="[^"]*"'
+          rm -f "$AAB" "$RUNNER_TEMP/throwaway.jks"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ima-al-hakav-release-${{ github.run_number }}
@@ -136,8 +154,8 @@ jobs:
     timeout-minutes: 30
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
