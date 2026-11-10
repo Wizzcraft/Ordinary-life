@@ -1,4 +1,22 @@
-# CANON v1 — binding for the writers' room (narrative-director, 09:10)
+# CANON v1.1 — binding for the writers' room (narrative-director, 09:15)
+
+**Changed in v1.1 (after the critic and design-director; these override anything I messaged earlier):**
+1. ONE hidden kinship only: Mazal and Dana. The croupier is NOT Shimon's brother. Shimon inherited
+   the building together with his father's mortgage; "אני לא בנק" is still literal.
+2. `lie.job` is "עבודה במשרד, עם כיסא מסתובב". "מנהל/ת" is only what mom makes of it when she retells it.
+3. A weekly call is a fixed skeleton with a live skin: one authored element for that week (what home
+   is carrying) and one reactive element from the pruned v1 pool (what the player did this week).
+4. The milk gag is not in a call. It is pair 01 of comedy-head's bank: a text from mom, a text from
+   dad seven days later, both before day 30.
+5. Day 63: she does not call, and there is NO "call mom" button (design: the player can only call
+   back after declining, or call to confess an open claim). The only channel is dad's thread.
+   "סתם להתקשר" appears once, as the last input of the game.
+6. EVERY player learns THAT the print shop closed, on day 91 at the latest (the tickets are bus
+   tickets). Curiosity and truth buy the when, the why, the rest of their year and the chance to act.
+7. A guest from home on days 58-60: Orna comes to see Yoavi and brings a box and mom's eyes.
+8. Yaeli is seen in play at least five times before day 78 (the next table at Rina's, the 06:00
+   queue, the top bunk, the evening class, the bench).
+9. Day 30 "what you said travels" must be heard in the TOWN, from someone who should not know.
 
 Everything here is decided. Propose changes in `room/story/<role>.md`; until I answer, this stands.
 Structure in English, in-world in Hebrew. Ids and variables follow ruling 8. The full bible is
@@ -31,7 +49,7 @@ Every scene must answer three questions, or it is a gag and gets loaded or cut:
   **כן** (says the true thing, exposed) `me.open`, **מתחמק** (a joke, a shrug) `me.guard`,
   **מציג** (the impressive version) `me.show`. They gate nothing. People describe the player by them
   ("את תמיד צוחקת כשזה נהיה רציני").
-- Lies to mom are four claims: `lie.job` (משרד, כיסא מסתובב, מנהל/ת), `lie.money` (חסכונות),
+- Lies to mom are four claims: `lie.job` (משרד, כיסא מסתובב), `lie.money` (חסכונות),
   `lie.home` (מרפסת, נוף), and new `lie.ok` (אכלתי, ישנתי, יש לי פה חברים).
 - A lie needs upkeep: later calls ask for a detail of the claim (what colour is the chair?).
   The truth needs no memory. That is the design; write the detail questions.
@@ -73,16 +91,17 @@ forged note, which is why she hears a lie in one syllable and why she keeps המ
 **Their year (the player is not told; each item leaks only as marked):**
 | Day | At home | How it can leak |
 |---|---|---|
-| 14 / 22 | The milk gag, exactly ruling 3: call 2 mom says dad went out for milk; day 22 dad texts. | Two messages. Never referenced again. It sits BEFORE day 30 on purpose. |
+| 6-22 | The milk gag, exactly ruling 3, as pair 01 of comedy-head's bank: a text from mom, a text from dad seven days later. | Two messages. Never referenced again, never in a call. Both land BEFORE day 30 on purpose. |
 | 30 | The print shop closes. Dad is home. They agree not to tell, so the child will not come back. | Dad's texts start arriving mid-morning on work days. |
 | 35 | Call 5: dad is sorting every drawer in the house by size. | "למה הוא בבית?" gets "ימי חופש. הרבה." |
 | 44 | They sell the car. | "אבא הולך ברגל. הוא אומר שזה בריא." |
 | 55 | A lodger, אביתר, a student, moves into the player's room. Dad's text the night before: mom stood in the room ten minutes without turning on the light. | Call 8: a voice asks where the towels are. "הטלוויזיה." |
-| 63 | **Mom does not call.** סבתא asked her when the child last phoned HER. Never. She waits. | The phone offers "חייג לאמא". It rings out. Next day dad reports what happened on her side. |
+| 58-60 | Orna comes to town to see Yoavi, with a box from mom. | The first test: two children of two mothers need each other's cover. What Orna sees, mom hears. |
+| 63 | **Mom does not call.** סבתא asked her when the child last phoned HER. Never. She waits. | Call day passes in silence. There is no button to call her; only dad's thread. Next day dad reports her side. The player reads the silence as whatever they fear. |
 | 68 | סבתא רחל's voice message (transcribed, she sings in minute three): she knows about the three years. | One card. "תענה לה." |
 | 72 | Dad starts as a trainee shelf-stacker at the supermarket back home, trained by a 19-year-old. | He tells only a player who told him the truth about their own job. To "a manager" he cannot. |
 | 77 | Holiday. Three plates; who sits at the third? | Mom confesses the lodger only to an open player. |
-| 84 / 91 | She floats the visit; she buys tickets. Bus tickets. | "כרטיסים? ומה עם האוטו?" |
+| 84 / 91 | She floats the visit; she buys tickets. Bus tickets. | Day 91, to EVERYONE, from dad: the car is sold, the print shop closed in the winter, "לא רצינו שתחזור בגלל זה". |
 | 98-112 | Preparation calls. Confession windows. Detail questions about every standing claim. | |
 | 119 | The shortest call of the year. | |
 | 121-122 | The visit; the bus stop in the morning. | Their truths surface only where the player made room. |
@@ -91,8 +110,10 @@ forged note, which is why she hears a lie in one syllable and why she keeps המ
 (`fam.asked` counts the times the player asked about THEM; open answers count). To "הכל בסדר" the
 answer is always "גם אצלנו הכל בסדר."
 Calls: days 7, 14, 21, 28, 35, 42, 49, 56, (63 silent), 70, 77, 84, 91, 98, 105, 112, 119.
-Sixteen calls and one silence, each AUTHORED for its day with 3-5 state variants. The random pool
-of 110 is retired; its best jokes are raw material. Dad texts about every 4-5 days, never on a call
+Sixteen calls and one silence. Each call is two cards: one element AUTHORED for that week (what
+home carries, the tell, the bus) and one REACTIVE element from the v1 pool, pruned to about 40 and
+rewritten to restraint (what the player did this week: a collapse, a record, a new job, a missed
+rent). A second year hears different skins on the same skeleton. Dad texts about every 4-5 days, never on a call
 day. Never more than one unsolicited family moment a day.
 Offstage: **savta** (mom's mother, 91, sharp); **orna** and **yoavi** stay, because Yoavi lives in
 THIS town, broke, telling Orna "פתחנו סניף" (a regular: w-strangers writes him with w-family);
@@ -101,13 +122,12 @@ Objects that pay off on day 121: the torch, the blue box, the coat, the room, th
 notebook. Do not spend them early.
 
 ## 5. The building (w-building)
-**shimon, 64.** He and his younger brother inherited the building; he bought the brother out with a
-bank loan. "אני לא בנק" is literal: the bank is the one that calls HIM. "הנכס" was his father's word.
+**shimon, 64.** He inherited the building together with the mortgage his father took to build it.
+"אני לא בנק" is literal: the bank is the one that calls HIM. "הנכס" was his father's word.
 - Rent every ten days, in cash: his mother's carer is paid every ten days in cash, and rent day is
   the day he brings the envelope ("אני בדרך לאמא שלי").
 - On his line: his mother **פורטונה** (`fortuna`), 90. He tells her the building is full, the lift
-  works and his brother "מנהל מלון". She knows better.
-- The brother is the croupier (w-roads names him). They have not spoken since the loan.
+  works and the loan is long paid. She knows better.
 - A developer has offered for the building. He must answer by day 110. Default: he sells.
 - His ask: once, when he cannot go, the player carries the envelope.
 **mazal, 70,** widow. Dana of the bar is her daughter.
@@ -172,8 +192,9 @@ bedtime stories to his two daughters by phone from the parked patrol car. His as
 about Rafael, once.
 **the teacher** taught both of them and remembers where each sat. The evening school closes unless
 enough finish this year; she pads the attendance sheet. Name, voice and id are yours.
-**the croupier** is Shimon's younger brother, a gambler who now deals: "מהצד הזה של השולחן אני
-לא מפסיד". The table limit is his own rule. He never wishes anyone luck. Name and id are yours.
+**the croupier** is a gambler who now deals, and says so on the first evening: "מהצד הזה של
+השולחן אני לא מפסיד". No kinship to anyone. The table limit is his own rule. He never wishes anyone
+luck. Name and id are yours.
 Professions are mirrors of the theme, each about the edited version: the doctor (what to tell the
 family), the lawyer (which truth to present), the developer (the demo and the product).
 
