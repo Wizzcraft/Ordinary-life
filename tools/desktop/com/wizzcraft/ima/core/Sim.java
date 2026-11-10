@@ -77,6 +77,7 @@ public final class Sim {
         // and on test Minis, so they stay exact whatever the real ones do.
         run(only, "minis", Sim::minis);
         run(only, "school", Sim::school);
+        run(only, "realmonkey", () -> monkey(soak / 2, 3));
         for (String id : Minis.ORDER) if (!id.equals("cook")) Minis.unregister(id);
         run(only, "unregistered", Sim::unregistered);
         // From here on the alley, the two street events and the waiter are played by test Minis.
@@ -446,11 +447,15 @@ public final class Sim {
 
     /** Walks to a building and waits until we are inside it. Returns false if something interrupted. */
     static boolean goTo(int id) {
+        // A message that arrives on the way out is answered first, or the tap for the door is lost.
+        closeDialogs();
         if (!(g.screen instanceof MapScreen)) {
             if (g.screen instanceof BuildingScreen) tapLabel("חזרה");
             else return false;
         }
         closeDialogs();
+        if (g.screen instanceof BuildingScreen) tapLabel("חזרה");
+        if (!(g.screen instanceof MapScreen)) return false;
         tapBuilding(id);
         for (int i = 0; i < 30 * 60; i++) {
             frame();
@@ -542,7 +547,7 @@ public final class Sim {
         for (int i = 0; i < n; i++) {
             int res = s.results[i];
             streak = res == Mini.PERFECT ? streak + 1 : 0;
-            pay += Math.round(roundPay * Job.RANK_PAY[s.rank] * new float[]{0.4f, 1f, 1.3f}[res]);
+            pay += Math.round(roundPay * Job.RANK_PAY[s.rank] * s.job.resultPay[res]);
             if (res != Mini.MISS) {
                 tips += Math.round(roundPay * (0.08f * Math.min(streak, 5) + (s.job.service ? cha / 150f : 0)));
             }
@@ -1357,10 +1362,14 @@ public final class Sim {
                 round = s.round;
             }
         }
-        // 28 an hour, rank 0, charisma 30: tips are 8% per perfect in a row plus 30/150.
-        int[] base = {36, 36, 36, 28, 11, 36, 36, 28};
-        int[] tip = {Math.round(28 * 0.28f), Math.round(28 * 0.36f), Math.round(28 * 0.44f), Math.round(28 * 0.2f), 0,
-                Math.round(28 * 0.28f), Math.round(28 * 0.36f), Math.round(28 * 0.2f)};
+        // The job's hourly pay, rank 0, charisma 30: tips are 8% per perfect in a row plus 30/150.
+        int[] base = new int[8], tip = new int[8];
+        for (int i = 0, streak = 0; i < 8; i++) {
+            int res = TestWork.script[i];
+            streak = res == 2 ? streak + 1 : 0;
+            base[i] = Math.round(j.pay * j.resultPay[res]);
+            tip[i] = res == 0 ? 0 : Math.round(j.pay * (0.08f * streak + 0.2f));
+        }
         int pay = 0, tips = 0;
         for (int i = 0; i < 8; i++) {
             pay += base[i];
@@ -1391,7 +1400,7 @@ public final class Sim {
         check(Math.abs(TestWork.difficulties[0] - 0.3f) < 1e-5f, "rank adds 0.15 a step");
         check(Math.abs(TestWork.difficulties[5] - (5 / 7f * 0.6f + 0.3f + 0.15f)) < 1e-5f, "tiredness adds 0.15, got " + TestWork.difficulties[5]);
         check(TestWork.difficulties[7] == 1f, "clamped at 1");
-        check(s.pay == 8 * Math.round(28 * 1.6f), "rank 2 pays 1.6 times the base");
+        check(s.pay == 8 * Math.round(j.pay * Job.RANK_PAY[2]), "rank 2 pays its multiple of the base");
         TestWork.script = null;
     }
 
@@ -1417,7 +1426,7 @@ public final class Sim {
         g.minute = 9 * 60;
         g.energy = 95;
         frame();
-        check(drawn().contains("מקצוען · " + Ui.nis(Math.round(30 * 1.25f)) + " לשעה"), "the menu shows the new rank and rate: " + drawn());
+        check(drawn().contains("מקצוען · " + Ui.nis(Math.round(Job.ALL[Job.COOK].pay * Job.RANK_PAY[1])) + " לשעה"), "the menu shows the new rank and rate: " + drawn());
         check(tapLabel("להתחיל משמרת: טבח"), "next shift");
         s = playShift(new Random(9), 1f);
         int[] exp = expectedPay(s, g.stat(Host.CHA));
@@ -1452,20 +1461,21 @@ public final class Sim {
     static void refusal() {
         fresh();
         enter(City.RESTAURANT, 11 * 60);
+        int need = Job.ALL[Job.WAITER].needValue;
         String menu = drawn();
-        check(menu.contains("דרוש: כריזמה 10, יש לך 5"), "the requirement is on the menu before asking: " + menu);
+        check(menu.contains("דרוש: כריזמה " + need + ", יש לך 5"), "the requirement is on the menu before asking: " + menu);
         check(tapLabel("לבקש עבודה: מלצר"), "the request can be made");
         check(g.hasDialog() && !g.hired(Job.WAITER), "not hired");
         frame();
         String why = drawn();
-        check(why.contains("צריך כריזמה 10 לפחות, ולך יש 5") && why.contains("כריזמה עולה"), "a clear explanation: " + why);
+        check(why.contains("צריך כריזמה " + need + " לפחות, ולך יש 5") && why.contains("כריזמה עולה"), "a clear explanation: " + why);
         check(heard.get(Sfx.BAD), "and a sound to match");
         closeDialogs();
-        g.setVar("cha", 9.9f);
+        g.setVar("cha", need - 0.1f);
         tapLabel("לבקש עבודה: מלצר");
-        check(!g.hired(Job.WAITER), "9.9 is not 10");
+        check(!g.hired(Job.WAITER), "just under is not enough");
         closeDialogs();
-        g.setVar("cha", 10);
+        g.setVar("cha", need);
         tapLabel("לבקש עבודה: מלצר");
         check(g.hired(Job.WAITER), "hired once the stat is there");
         closeDialogs();
@@ -2381,6 +2391,13 @@ public final class Sim {
      * Drops the running game into a corner of the engine, so the soak reaches every screen. The
      * corners come round in turn (n counts the jumps): coverage must not depend on luck.
      */
+    /** Puts the player at a building's door: the game never has somebody "at" a place they are not standing. */
+    static void stand(int id) {
+        g.px = City.B[id].doorX;
+        g.py = City.B[id].doorY;
+        g.at = id;
+    }
+
     static void jump(Random r, int n) {
         if (!g.started) {
             g.newGame(r.nextBoolean(), "קוף");
@@ -2395,7 +2412,7 @@ public final class Sim {
                 g.setVar("hired." + j.id, 1);
                 g.addVar("xp." + j.id, r.nextInt(50));
                 g.energy = 40 + r.nextInt(60);
-                g.at = j.building;
+                stand(j.building);
                 Screen s = ShiftScreen.open(g, j);
                 if (s != null) g.screen = s;
                 break;
@@ -2406,7 +2423,7 @@ public final class Sim {
                 break;
             }
             case 3: {
-                g.at = b;
+                stand(b);
                 Screen s = VenueScreen.open(g, r.nextBoolean() ? "alley" : "sim.venue", b);
                 if (s != null) g.screen = s;
                 break;
@@ -2477,6 +2494,8 @@ public final class Sim {
                 if (r.nextInt(5) != 0) g = new Game();
                 g.load(saved);
                 check(g.save().equals(saved), "monkey: reloading changes nothing at frame " + i + "\n  " + saved + "\n  " + g.save());
+                // The test list is not a place to come back to: the app reopens on the title screen.
+                if (was == TestMenuScreen.class || was == TestPlayScreen.class) was = TitleScreen.class;
                 check(g.screen.getClass() == was, "monkey: same screen after reload, was " + was.getSimpleName());
                 reloads++;
             }
