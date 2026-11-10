@@ -4,6 +4,32 @@ plugins {
 
 def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
 
+// ---- release configuration (see docs/RELEASE.md) ----
+// A setting is read from a Gradle property (-Pima.x=... or ~/.gradle/gradle.properties) first,
+// then from an environment variable (what CI uses). Secrets never live in this repository.
+def releaseSetting = { String prop, String env ->
+    def v = project.findProperty(prop) ?: System.getenv(env)
+    v == null || v.toString().trim().isEmpty() ? null : v.toString().trim()
+}
+def uploadStoreFile = releaseSetting('ima.upload.storeFile', 'IMA_UPLOAD_STORE_FILE')
+def uploadStorePassword = releaseSetting('ima.upload.storePassword', 'IMA_UPLOAD_STORE_PASSWORD')
+def uploadKeyAlias = releaseSetting('ima.upload.keyAlias', 'IMA_UPLOAD_KEY_ALIAS')
+def uploadKeyPassword = releaseSetting('ima.upload.keyPassword', 'IMA_UPLOAD_KEY_PASSWORD') ?: uploadStorePassword
+def hasUploadKey = uploadStoreFile != null && file(uploadStoreFile).isFile() &&
+        uploadStorePassword != null && uploadKeyAlias != null
+
+// Play only accepts a versionCode higher than every one uploaded before, across all workflows and
+// local builds, so release builds count minutes since 2026-01-01 UTC instead of a per-workflow run
+// number. Override with -Pima.versionCode=N / IMA_VERSION_CODE when a fixed number is needed.
+def releaseVersionCode = (releaseSetting('ima.versionCode', 'IMA_VERSION_CODE')
+        ?: ((System.currentTimeMillis().intdiv(1000L) - 1767225600L).intdiv(60L)).toString()).toInteger()
+def releaseVersionName = releaseSetting('ima.versionName', 'IMA_VERSION_NAME') ?: ('0.1.' + runNumber)
+
+if (!hasUploadKey) {
+    logger.lifecycle('ima: no upload key configured; release builds are a PREVIEW signed with the ' +
+            'repository debug key (id com.wizzcraft.ima.preview). Google Play rejects them by design.')
+}
+
 android {
     namespace 'com.wizzcraft.ima'
     compileSdk 35
@@ -23,11 +49,33 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasUploadKey) {
+            upload {
+                storeFile file(uploadStoreFile)
+                storePassword uploadStorePassword
+                keyAlias uploadKeyAlias
+                keyPassword uploadKeyPassword
+            }
+        }
     }
 
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasUploadKey) {
+                signingConfig signingConfigs.upload
+            } else {
+                // Without the owner's key CI still proves the shrunk build and produces an installable
+                // APK. The suffix keeps it from replacing (or blocking updates of) the real game on a
+                // phone, and the debug certificate makes Play refuse it if uploaded by mistake.
+                signingConfig signingConfigs.debug
+                applicationIdSuffix '.preview'
+            }
         }
     }
 
@@ -38,5 +86,14 @@ android {
 
     lint {
         abortOnError false
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType('release')) { variant ->
+        variant.outputs.each { output ->
+            output.versionCode.set(releaseVersionCode)
+            output.versionName.set(releaseVersionName + (hasUploadKey ? '' : '-preview'))
+        }
     }
 }

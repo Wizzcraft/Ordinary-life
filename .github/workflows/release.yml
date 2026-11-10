@@ -1,0 +1,158 @@
+name: release
+
+# Builds the Play release (AAB) and a shrunk release APK. It publishes NOTHING except workflow
+# artifacts: no GitHub releases, no tags, no upload to Google Play. See docs/RELEASE.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'versionName for this build (e.g. 1.0.0); empty = 0.1.<run number>'
+        required: false
+        default: ''
+  push:
+    branches: [release-lab]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMA_VERSION_NAME: ${{ github.event.inputs.version_name }}
+      BUNDLETOOL_VERSION: '1.18.1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The upload key is optional. With the four secrets set, the bundle is signed with the owner's
+      # upload key and is ready for Play Console; without them it is a debug-signed PREVIEW.
+      - name: Restore upload key (if configured)
+        env:
+          KEYSTORE_B64: ${{ secrets.IMA_UPLOAD_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.IMA_UPLOAD_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.IMA_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.IMA_UPLOAD_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            {
+              echo "IMA_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.jks"
+              echo "IMA_UPLOAD_STORE_PASSWORD=$STORE_PASSWORD"
+              echo "IMA_UPLOAD_KEY_ALIAS=$KEY_ALIAS"
+              echo "IMA_UPLOAD_KEY_PASSWORD=${KEY_PASSWORD:-$STORE_PASSWORD}"
+            } >> "$GITHUB_ENV"
+            echo "SIGNING=upload key" >> "$GITHUB_ENV"
+            echo "Upload key restored."
+          else
+            echo "SIGNING=PREVIEW (debug key, id com.wizzcraft.ima.preview)" >> "$GITHUB_ENV"
+            echo "::notice::No upload key secrets: building a debug-signed preview. Play will not accept it."
+          fi
+
+      - name: Build release bundle, release APK and debug APK (for comparison)
+        run: ./gradlew --no-daemon bundleRelease assembleRelease assembleDebug
+
+      - name: Collect outputs
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp app/build/outputs/bundle/release/app-release.aab out/ima-al-hakav-release.aab
+          cp app/build/outputs/apk/release/app-release.apk out/ima-al-hakav-release.apk
+          cp app/build/outputs/apk/debug/app-debug.apk out/ima-al-hakav-debug.apk
+          cp app/build/outputs/mapping/release/mapping.txt out/mapping.txt
+
+      - name: Report sizes and contents
+        run: |
+          set -uo pipefail
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          AA="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          section() { echo; echo "==================== $1 ===================="; }
+          {
+          section "Signing"
+          echo "$SIGNING"
+          section "File sizes (bytes)"
+          ls -l out | awk 'NR>1 {printf "%10d  %s\n", $5, $9}'
+          section "Release APK: manifest summary"
+          "$BT/aapt2" dump badging out/ima-al-hakav-release.apk | grep -E "^(package|sdkVersion|targetSdkVersion|application-label|application-icon|uses-permission)" || true
+          section "Release APK: download size estimate (apkanalyzer)"
+          "$AA" apk download-size out/ima-al-hakav-release.apk || true
+          section "Debug APK: download size estimate (apkanalyzer)"
+          "$AA" apk download-size out/ima-al-hakav-debug.apk || true
+          section "Release APK: entries"
+          unzip -l out/ima-al-hakav-release.apk
+          section "Release APK: defined classes after R8"
+          "$AA" dex packages --defined-only out/ima-al-hakav-release.apk | head -60 || true
+          section "Release APK: certificate"
+          "$BT/apksigner" verify --print-certs out/ima-al-hakav-release.apk | grep -E "certificate (DN|SHA-256)" || true
+          section "AAB: entries"
+          unzip -l out/ima-al-hakav-release.aab
+          section "AAB: signer"
+          keytool -printcert -jarfile out/ima-al-hakav-release.aab | grep -E "Owner|SHA256:" | head -4 || true
+          section "R8 mapping"
+          wc -l out/mapping.txt
+          } 2>&1 | tee out/report.txt
+
+      # bundletool shows what Play will actually deliver from the bundle. It is a pinned download;
+      # if it is unavailable the build is still good, so this step never fails the job.
+      - name: Bundle inspection (bundletool)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/bundletool.jar" \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+          BTJ="java -jar $RUNNER_TEMP/bundletool.jar"
+          {
+          echo; echo "==================== bundletool ${BUNDLETOOL_VERSION} ===================="
+          $BTJ validate --bundle=out/ima-al-hakav-release.aab | head -20
+          echo "-- manifest inside the bundle:"
+          $BTJ dump manifest --bundle=out/ima-al-hakav-release.aab | head -40
+          $BTJ build-apks --bundle=out/ima-al-hakav-release.aab --output="$RUNNER_TEMP/all.apks" \
+            --ks="$GITHUB_WORKSPACE/debug.keystore" --ks-pass=pass:android --ks-key-alias=androiddebugkey --key-pass=pass:android
+          echo "-- download size per device configuration (bytes, MIN,MAX):"
+          $BTJ get-size total --apks="$RUNNER_TEMP/all.apks" --dimensions=SDK,ABI,SCREEN_DENSITY,LANGUAGE
+          } 2>&1 | tee -a out/report.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ima-al-hakav-release-${{ github.run_number }}
+          path: out/
+          retention-days: 14
+
+  # Google Play requires targetSdk 36 for new apps and updates since 31 Aug 2026. This job only
+  # PROBES the upgrade path inside the CI workspace (nothing is committed): newer Android Gradle
+  # Plugin and Gradle, compile/target SDK 36. It never fails the workflow.
+  play-target-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Upgrade AGP 8.13.0, Gradle 8.13, SDK 36 (workspace only)
+        run: |
+          sed -i "s/id 'com.android.application' version '[^']*'/id 'com.android.application' version '8.13.0'/" build.gradle
+          sed -i "s#gradle-[0-9.]*-bin.zip#gradle-8.13-bin.zip#" gradle/wrapper/gradle-wrapper.properties
+          sed -i "s/compileSdk 35/compileSdk 36/; s/targetSdk 35/targetSdk 36/" app/build.gradle
+          git diff --stat
+          git diff
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build with target 36
+        run: ./gradlew --no-daemon bundleRelease assembleRelease
+      - name: Check target
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$BT/aapt2" dump badging app/build/outputs/apk/release/app-release.apk | grep -E "^(package|sdkVersion|targetSdkVersion)"
+          ls -l app/build/outputs/bundle/release/ app/build/outputs/apk/release/
