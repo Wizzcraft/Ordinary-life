@@ -364,22 +364,32 @@ final class Cards {
 
     // ------------------------------------------------------------------ chips
 
-    static final int[] CHIP_VALUES = {100, 50, 25, 10};
+    /** Every chip the casino uses, largest first (piles are broken down in this order). */
+    static final int[] CHIP_VALUES = {100, 50, 25, 10, 5, 2, 1};
+    private static final int[] CHIP_COLS = {0xFF25272E, 0xFFE8862E, 0xFF2E9E5B, 0xFF2F6FD6, 0xFFC9302C, 0xFFF2C94C, 0xFFE9ECEF};
+    /** Light chips take dark print and dark edge marks; the rest take white. */
+    private static final boolean[] CHIP_LIGHT = {false, true, false, false, false, true, true};
+
+    private static int chipIndex(int value) {
+        for (int i = 0; i < CHIP_VALUES.length; i++) if (value >= CHIP_VALUES[i]) return i;
+        return CHIP_VALUES.length - 1;
+    }
 
     static int chipColor(int value) {
-        return value >= 100 ? 0xFF25272E : value >= 50 ? 0xFF2F6FD6 : value >= 25 ? 0xFFC9302C : 0xFFE9ECEF;
+        return CHIP_COLS[chipIndex(value)];
     }
 
     /** A chip seen from above, with edge notches; on == false greys it out. */
     static void chipFace(Gfx g, float cx, float cy, float r, int value, boolean on, float press) {
         r *= 1 + press * 0.08f;
-        int col = on ? chipColor(value) : 0xFF3B4048;
-        int edge = on ? (value >= 10 && value < 25 ? 0xFF2B3340 : 0xFFF4F6F8) : 0xFF5B6270;
+        int k = chipIndex(value);
+        boolean light = CHIP_LIGHT[k];
+        int col = on ? CHIP_COLS[k] : 0xFF3B4048;
+        int edge = on ? (light ? 0xFF2B3340 : 0xFFF4F6F8) : 0xFF5B6270;
         g.fillCircle(cx + 1.5f, cy + 2.5f, r, 0x55000000);
         g.fillCircle(cx, cy, r, col);
         for (int i = 0; i < 8; i++) {
-            double a = Math.PI * 2 * i / 8 + 0.2;
-            float ax = (float) Math.cos(a), ay = (float) Math.sin(a);
+            float ax = COS[i * 3], ay = SIN[i * 3];
             float px = -ay, py = ax, hw = r * 0.15f;
             float x0 = cx + ax * r * 0.74f, y0 = cy + ay * r * 0.74f, x1 = cx + ax * r, y1 = cy + ay * r;
             g.fillPoly(new float[]{x0 + px * hw, y0 + py * hw, x1 + px * hw, y1 + py * hw, x1 - px * hw, y1 - py * hw,
@@ -387,17 +397,18 @@ final class Cards {
         }
         g.fillCircle(cx, cy, r * 0.66f, on ? Ui.darken(col, 0.82f) : 0xFF2C3139);
         g.fillCircle(cx, cy, r * 0.58f, col);
-        int ink = !on ? 0xFF6B7380 : value < 25 ? 0xFF1B2029 : 0xFFFFFFFF;
+        int ink = !on ? 0xFF6B7380 : light ? 0xFF1B2029 : 0xFFFFFFFF;
         String t = String.valueOf(value);
         g.text(t, cx, cy + r * 0.2f, r * (t.length() > 2 ? 0.52f : 0.62f), ink, Gfx.CENTER);
     }
 
     /** A pile of chips for {@code amount}, seen from the side, stacks side by side, bottom at baseY. */
     static void chipPile(Gfx g, float cx, float baseY, float r, int amount, float alpha) {
-        int[] counts = new int[4];
-        int left = amount;
+        int n = CHIP_VALUES.length;
+        int[] counts = new int[n];
+        int left = Math.max(0, amount);
         int stacks = 0;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < n; i++) {
             counts[i] = left / CHIP_VALUES[i];
             left -= counts[i] * CHIP_VALUES[i];
             if (counts[i] > 0) stacks++;
@@ -406,34 +417,198 @@ final class Cards {
         float gap = r * 2.05f;
         float x = cx - (stacks - 1) * gap / 2;
         int a = ((int) (Ui.clamp(alpha, 0, 1) * 255)) << 24;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < n; i++) {
             if (counts[i] == 0) continue;
-            int n = Math.min(counts[i], 9);
-            int col = chipColor(CHIP_VALUES[i]);
+            int m = Math.min(counts[i], 9);
+            int col = CHIP_COLS[i];
+            int stripe = CHIP_LIGHT[i] ? 0x2F6FD6 : 0xF4F6F8;
             float th = r * 0.3f;
-            for (int k = 0; k < n; k++) {
+            for (int k = 0; k < m; k++) {
                 float y = baseY - k * th;
                 ellipse(g, x, y + th * 0.6f, r, r * 0.46f, a | (Ui.darken(col, 0.55f) & 0xFFFFFF));
                 g.fillRect(x - r, y - th * 0.3f, r * 2, th * 0.9f + 0.4f, a | (Ui.darken(col, 0.7f) & 0xFFFFFF));
                 ellipse(g, x, y, r, r * 0.46f, a | (col & 0xFFFFFF));
                 if (k % 2 == 0) {
                     for (int d = -1; d <= 1; d += 2) {
-                        g.fillRect(x + d * r * 0.62f - r * 0.1f, y - th * 0.3f, r * 0.2f, th * 0.9f, a | (CHIP_VALUES[i] >= 25 ? 0xF4F6F8 : 0x2F6FD6));
+                        g.fillRect(x + d * r * 0.62f - r * 0.1f, y - th * 0.3f, r * 0.2f, th * 0.9f, a | stripe);
                     }
                 }
             }
-            float topY = baseY - (n - 1) * th;
+            float topY = baseY - (m - 1) * th;
             ellipse(g, x, topY, r * 0.62f, r * 0.28f, a | (Ui.darken(col, 0.85f) & 0xFFFFFF));
             x += gap;
         }
     }
 
-    /** A button with a pressed look; like Btn but with a label size and an optional gold primary. */
-    static void button(Gfx g, Btn b, float press, int fill, int ink) {
-        float inset = press * 2;
-        g.fillRoundRect(b.x, b.y + 3, b.w, b.h, 12, 0x66000000);
-        g.fillRoundRect(b.x + inset, b.y + inset, b.w - 2 * inset, b.h - 2 * inset, 12, fill);
-        g.fillRoundRect(b.x + inset + 2, b.y + inset + 2, b.w - 2 * inset - 4, (b.h - 2 * inset) * 0.4f, 9, 0x22FFFFFF);
-        g.text(b.label, b.x + b.w / 2, b.y + b.h / 2 + 6, 17, ink, Gfx.CENTER);
+    // ------------------------------------------------------------------ one casino
+
+    /**
+     * The frame the four casino venues share, so they read as one casino:
+     * <ul>
+     * <li>a stakes strip across the top of the play area: wallet at the right, the current bet and the
+     * table maximum at the left, an optional short note in the middle;</li>
+     * <li>a bottom bar: "יציאה" at the left, the primary action at the right. Exit and every
+     * non-primary action share one neutral look; only the primary may be gold, and after a loss it is
+     * drawn neutral too, so nothing then calls louder than the way out;</li>
+     * <li>chips in the thumb zone right above the bar, drawn with {@link #chipFace} everywhere;</li>
+     * <li>one result vocabulary: the same headline, floater, burst and sound for a win, an even
+     * result and a loss at every table ({@link #resultFx}, {@link #result}).</li>
+     * </ul>
+     * Buttons act on release over the button they were pressed on; nothing repeats by itself.
+     */
+    static final class Room {
+        static final float STRIP_H = 30, BAR_H = 48, PAD = 8, GAP = 4, EXIT_W = 80;
+        /** Tray chips are 46 across plus a 2-unit ring: a full touch target. */
+        static final float CHIP_R = 23;
+        /** A host floater lives 1.1 s; the next hand or spin waits that long, so a number never floats next to the wrong cards. */
+        static final float RESULT_HOLD = 1.1f;
+        static final int LOST = -1, EVEN = 0, WON = 1;
+        static final int NEUTRAL = 0xFF2C3644, OFF = 0xFF1B2028, OFF_INK = 0xFF5B6472;
+
+        private Room() {
+        }
+
+        /** Top of the bottom bar. */
+        static float barY(float bottom) {
+            return bottom - 6 - BAR_H;
+        }
+
+        /** Centre line of the chip tray right above the bar. */
+        static float trayY(float bottom) {
+            return barY(bottom) - GAP - 2 - CHIP_R;
+        }
+
+        /** Top of the chip tray (anything above this is table). */
+        static float trayTop(float bottom) {
+            return trayY(bottom) - CHIP_R - 3;
+        }
+
+        /** First y below the stakes strip. */
+        static float below(float top) {
+            return top + STRIP_H;
+        }
+
+        static void strip(Gfx g, float top, int wallet, int bet, int max, String note, int noteCol) {
+            float h = STRIP_H, cy = top + h / 2;
+            g.fillRect(0, top, 360, h, 0xF00A0E13);
+            g.fillRect(0, top + h - 1.5f, 360, 1.5f, 0x66FFD27A);
+            String w = Ui.nis(wallet);
+            g.fillCircle(343, cy, 7.5f, 0xFFB5761A);
+            g.fillCircle(343, cy - 0.6f, 6.5f, Ui.ACCENT);
+            g.text("₪", 343, cy + 3.6f, 9, 0xFF9A5F10, Gfx.CENTER);
+            float ww = g.textWidth(w, 17);
+            g.text(w, 331, cy + 6, 17, Ui.INK, Gfx.RIGHT);
+            String b = "הימור " + Ui.nis(bet);
+            float bs = Ui.fit(g, b, 110, 15);
+            g.text(b, 10, cy + 5.5f, bs, bet > 0 ? Ui.ACCENT : Ui.DIM, Gfx.LEFT);
+            float bw = g.textWidth(b, bs);
+            String m = "עד " + Ui.nis(max);
+            g.text(m, 10 + bw + 8, cy + 5, 12, Ui.DIM, Gfx.LEFT);
+            float l = 10 + bw + 8 + g.textWidth(m, 12) + 10, r = 331 - ww - 10;
+            if (note != null && !note.isEmpty() && r - l > 40) {
+                float ns = Ui.fit(g, note, r - l, 13);
+                g.text(note, (l + r) / 2, cy + 5, ns, noteCol, Gfx.CENTER);
+            }
+        }
+
+        /** The exit button: always neutral, enabled only between hands or spins. */
+        static void exit(Gfx g, float x, float y, float w, float h, boolean on, float press) {
+            action(g, x, y, w, h, "יציאה", on, false, press);
+        }
+
+        /** A bar button. gold marks the primary action; pass false after a loss. */
+        static void action(Gfx g, float x, float y, float w, float h, String label, boolean on, boolean gold, float press) {
+            int fill = !on ? OFF : gold ? Ui.ACCENT : NEUTRAL;
+            int ink = !on ? OFF_INK : gold ? 0xFF1A1300 : Ui.INK;
+            float in = press * 2;
+            if (on) g.fillRoundRect(x, y + 3, w, h, 12, 0x66000000);
+            g.fillRoundRect(x + in, y + in, w - 2 * in, h - 2 * in, 12, fill);
+            if (on) g.fillRoundRect(x + in + 2, y + in + 2, w - 2 * in - 4, (h - 2 * in) * 0.4f, 9, 0x1EFFFFFF);
+            else g.strokeRoundRect(x + 0.5f, y + 0.5f, w - 1, h - 1, 12, 1, 0xFF2A313C);
+            float s = Ui.fit(g, label, w - 14, 17);
+            g.text(label, x + w / 2, y + h / 2 + s * 0.36f, s, ink, Gfx.CENTER);
+        }
+
+        /** A chip in the tray; selected draws a gold ring (venues where one chip is the current choice). */
+        static void chip(Gfx g, float cx, float cy, int value, boolean on, boolean selected, float press) {
+            if (selected) {
+                g.fillCircle(cx, cy, CHIP_R + 5, 0x55FFE08A);
+                g.fillCircle(cx, cy, CHIP_R + 3, 0xFFFFD27A);
+            }
+            chipFace(g, cx, cy, CHIP_R, value, on, press);
+        }
+
+        /** Size of a result: 2 for a jackpot (50 times the bet or more), 1 for a big win (10 times), else 0. */
+        static int size(int bet, int back) {
+            return back >= 50L * bet ? 2 : back >= 10L * bet ? 1 : 0;
+        }
+
+        static int kind(int bet, int back) {
+            return back > bet ? WON : back == bet ? EVEN : LOST;
+        }
+
+        /**
+         * The game feel of a settled hand or spin, the same at every table: a floating net amount, a burst
+         * and a sound scaled by the size of the win, or a red amount, a small shake and the loss sound.
+         * Returns {@link #WON}, {@link #EVEN} or {@link #LOST}.
+         */
+        static int resultFx(Host h, float x, float y, int bet, int back) {
+            int net = back - bet, k = kind(bet, back), sz = size(bet, back);
+            if (k == WON) {
+                h.text(x, y, "+" + Ui.nis(net), Ui.ACCENT);
+                h.burst(x, y, Ui.ACCENT, sz == 2 ? 40 : sz == 1 ? 22 : 10);
+                if (sz == 2) {
+                    h.burst(x - 90, y, 0xFFFF6B6B, 18);
+                    h.burst(x + 90, y, 0xFF5AA9FF, 18);
+                    h.shake(6);
+                }
+                h.sfx(sz == 2 ? Sfx.LEVEL : sz == 1 ? Sfx.PERFECT : Sfx.COIN);
+            } else if (k == EVEN) {
+                h.text(x, y, "ההימור חזר", Ui.INK);
+                h.sfx(Sfx.TICK);
+            } else {
+                h.text(x, y, "-" + Ui.nis(-net), Ui.BAD);
+                h.shake(3);
+                h.sfx(Sfx.BAD);
+            }
+            return k;
+        }
+
+        static String headline(int bet, int back) {
+            int k = kind(bet, back);
+            return k == WON ? "זכית " + Ui.nis(back - bet) : k == EVEN ? "ההימור חזר" : "הפסדת " + Ui.nis(bet - back);
+        }
+
+        static int headlineColor(int bet, int back) {
+            int k = kind(bet, back);
+            return k == WON ? Ui.ACCENT : k == EVEN ? Ui.INK : Ui.BAD;
+        }
+
+        /** "הימור ₪10 · קיבלת ₪25": what went in and what came back, exactly as paid. */
+        static String detail(int bet, int back) {
+            return "הימור " + Ui.nis(bet) + " · קיבלת " + Ui.nis(back);
+        }
+
+        /**
+         * The result block, centred at cx: the headline (popping for a moment after age 0) and under it
+         * the reason ("הדילר חרג", "שני זוגות", ...) with the money detail. About 40 tall from y - 18.
+         */
+        static void result(Gfx g, float cx, float y, String reason, int bet, int back, float age) {
+            float pop = 1 + Math.max(0, 1 - age * 4) * 0.25f;
+            String hl = headline(bet, back);
+            g.text(hl, cx, y, Ui.fit(g, hl, 320, 22) * pop, headlineColor(bet, back), Gfx.CENTER);
+            String d = reason == null || reason.isEmpty() ? detail(bet, back) : reason + " · " + detail(bet, back);
+            g.text(d, cx, y + 19, Ui.fit(g, d, 336, 13), 0xFFC9D2DC, Gfx.CENTER);
+        }
+
+        /** The note shown after an interrupted hand was settled while the player was away. */
+        static String awayNote(int bet, int back) {
+            int net = back - bet;
+            return "בזמן שיצאת: " + (net > 0 ? "+" + Ui.nis(net) : net == 0 ? "ההימור חזר" : "-" + Ui.nis(-net));
+        }
+
+        static int awayColor(int bet, int back) {
+            return headlineColor(bet, back);
+        }
     }
 }

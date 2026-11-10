@@ -12,10 +12,25 @@ import java.util.Random;
  * on exactly that pocket. Stakes leave the wallet when a chip is placed and winnings come back
  * through {@code h.pay} when the ball settles.
  *
+ * pause() pays a spin in flight exactly as drawn (never a refund); only chips placed for a spin
+ * that has not started go back to the wallet.
+ *
  * Every bet pays 36/37 of the stake on average (97.3%): a straight number pays 35:1, a dozen 2:1,
  * the even-money bets 1:1, and zero takes them all.
+ *
+ * Persistent variable: casino.roulette.chip (index into CHIPS).
  */
 final class RouletteMini extends Mini {
+    // ================================================================ stakes
+    // One block for the economy designer. Every amount is in shekels.
+    /** Most that can be on the table for one spin, all bets together. */
+    static final int TABLE_MAX = 100;
+    /** The chips in the tray; one is the current chip and each tap on a bet adds one of it. */
+    static final int[] CHIPS = {5, 10, 25, 50};
+    // The return multiples below set the return to player (97.3%); they are the standard single-zero
+    // table and are not meant to be tuned.
+    // ================================================================
+
     // ---- the maths (also used by CasinoCheck) ----
 
     /** Pockets in wheel order, clockwise. */
@@ -30,7 +45,6 @@ final class RouletteMini extends Mini {
     /** Bet ids: 0..36 are straight numbers, then the outside bets. */
     static final int B_RED = 37, B_BLACK = 38, B_ODD = 39, B_EVEN = 40, B_LOW = 41, B_HIGH = 42, B_D1 = 43, B_D2 = 44,
             B_D3 = 45, BETS = 46;
-    static final int[] CHIPS = {10, 25, 50, 100};
 
     /** Multiple of the stake handed back (stake included) when the ball lands on {@code n}. */
     static int returnMult(int bet, int n) {
@@ -62,41 +76,46 @@ final class RouletteMini extends Mini {
     /** Whole spin, and the moment the ball leaves the track and falls into the pockets. */
     private static final float T = 6.0f, T_DROP = 3.9f, DROP = T - T_DROP;
     private static final float BALL_TURNS = 5.5f, MIX = 0.25f, DAMP = 2.4f, OMEGA = 5.5f;
+    /** On a short screen the big wheel stays up this long after the ball settles, then the table returns. */
+    private static final float SHOW = 1.6f;
 
     private static final int BET = 0, SPIN = 1;
     private static final int FELT = 0xFF0E4A32, FELT2 = 0xFF136040, BRASS = 0xFFC9A04A, BRASS_D = 0xFF7A5524;
 
-    private int state, chip;
+    // touch ids after the 46 bet cells
+    private static final int I_CHIP = BETS, I_NUM = BETS + 4, I_EXIT = BETS + 5, I_CLEAR = BETS + 6, I_AGAIN = BETS + 7,
+            I_SPIN = BETS + 8, I_PAGE = BETS + 9, NI = BETS + 10;
+
+    private int state, chip, page;
     private final int[] bets = new int[BETS], last = new int[BETS];
     private int total, lastTotal;
     /** What the latest spin staked and returned; read by CasinoCheck. */
     int lastStake, lastWin;
-    private boolean sheet, leave;
+    private boolean sheet, leave, lostLast, spunOnce;
 
     // wheel and ball
     private float th, t, th0, phi0, wtot, x0, target, trackR, pocketR, rb;
     private int result = -1, resIdx, tickIdx = -1;
     private boolean ballOn, lit;
-    private float ballPsi, litT, tickGap, flashT;
+    private float ballPsi, litT = 99, tickGap, flashT, resT = 99;
     private final boolean[] won = new boolean[BETS];
     private final int[] hist = new int[5];
     private int histN;
-    private String msg = "";
-    private int msgCol = Ui.DIM;
+    private int awayBet, awayBack;
     private float time;
 
     // layout (recomputed every draw, and once at begin so touches before the first draw are safe)
-    private float lTop, lBottom, rowH, wheelY, wheelH, cx, cy, R, panX0, panX1, dozY, outY, chipY, actY;
-    private final float[] bx = new float[BETS], by = new float[BETS], bw = new float[BETS], bh = new float[BETS];
-    private float sheetTop, sheetBottom;
-    private Btn exitB, clearB, againB, spinB, numB;
-    private final Btn[] chipB = new Btn[4];
+    private float lTop, lBottom, rTop, rBot, zTop, zBot, wheelH, cx, cy, R, panX0, panX1, dozY, outY, trayY, barY;
+    private float cellW, cellH;
+    private boolean compact;
+    private final float[] bx = new float[NI], by = new float[NI], bw = new float[NI], bh = new float[NI];
+    private int pressId = -1;
+    private float pressT;
 
     // flying coins
     private static final class Fly {
         float x0, y0, x1, y1, t, delay;
         boolean lose;
-        int val;
     }
 
     private final ArrayList<Fly> flies = new ArrayList<>();
@@ -116,24 +135,24 @@ final class RouletteMini extends Mini {
 
     @Override
     String howTo() {
-        return "בוחרים אסימון, מניחים הימורים על השולחן ולוחצים סובב. אפשר כמה הימורים בסיבוב אחד, ואפס לוקח את כולם.";
+        return "בוחרים אסימון, מניחים הימורים על השולחן ומסובבים. אפשר כמה הימורים בסיבוב אחד, ואפס לוקח את כולם.";
     }
 
     @Override
     void begin(int round, float difficulty) {
-        if (total > 0) h.pay(total);
-        java.util.Arrays.fill(bets, 0);
-        total = 0;
+        // Normally pause() has already settled everything; this only guards a begin() without one.
+        settleNow();
         state = BET;
         sheet = false;
         leave = false;
+        page = 0;
         t = 0;
+        resT = 99;
         flies.clear();
         flashT = 0;
-        msg = "";
         chip = (int) Ui.clamp(Math.round(h.var("casino.roulette.chip")), 0, CHIPS.length - 1);
         fixChip();
-        layout(Game.HUD_H + 74, h.screenH() - 96);
+        layout(Game.PLAY_TOP, Math.max(h.screenH(), 560) - Game.PLAY_FOOT);
     }
 
     /** Moves the selection down to a chip the player can afford, if there is one. */
@@ -141,17 +160,31 @@ final class RouletteMini extends Mini {
         while (chip > 0 && h.money() < CHIPS[chip]) chip--;
     }
 
-    @Override
-    void pause() {
-        // A spin that has not been resolved gives the stakes back, and so do bets not yet spun.
+    /** Pays a spin in flight as drawn; chips placed for a spin that never started go back. */
+    private void settleNow() {
+        if (state == SPIN) {
+            t = T;
+            settle();
+            awayBet = lastStake;
+            awayBack = lastWin;
+        }
+        clearTable();
+    }
+
+    private void clearTable() {
         if (total > 0) h.pay(total);
         java.util.Arrays.fill(bets, 0);
         total = 0;
+    }
+
+    @Override
+    void pause() {
+        settleNow();
         state = BET;
         sheet = false;
         t = 0;
-        lit = false;
         flies.clear();
+        pressId = -1;
     }
 
     @Override
@@ -165,7 +198,9 @@ final class RouletteMini extends Mini {
     int update(float dt) {
         time += dt;
         if (flashT > 0) flashT -= dt;
-        if (lit) litT += dt;
+        if (pressT > 0) pressT -= dt;
+        litT += dt;
+        resT += dt;
         for (int i = flies.size() - 1; i >= 0; i--) {
             Fly f = flies.get(i);
             if (f.delay > 0) {
@@ -261,17 +296,16 @@ final class RouletteMini extends Mini {
     }
 
     private void startSpin() {
-        if (state != BET || total <= 0) return;
+        if (state != BET || total <= 0 || resT < Cards.Room.RESULT_HOLD) return;
         sheet = false;
         lit = false;
         state = SPIN;
         t = 0;
+        awayBet = awayBack = 0;
         // The result is decided here and nowhere else.
         result = draw(h.rnd());
         resIdx = indexOf(result);
         plan();
-        msg = "הכדור מסתובב";
-        msgCol = Ui.DIM;
         h.sfx(Sfx.WHOOSH);
     }
 
@@ -296,6 +330,19 @@ final class RouletteMini extends Mini {
         return result;
     }
 
+    boolean spinning() {
+        return state == SPIN;
+    }
+
+    /** Chips on the table right now (placed, not yet spun). */
+    int onTable() {
+        return total;
+    }
+
+    int betOn(int b) {
+        return bets[b];
+    }
+
     private void settle() {
         state = BET;
         int win = 0;
@@ -308,34 +355,34 @@ final class RouletteMini extends Mini {
                 win += bets[b] * m;
             }
         }
-        int net = win - total;
         lastStake = total;
         lastWin = win;
         if (win > 0) h.pay(win);
+        spunOnce = true;
         ballOn = true;
         ballPsi = target;
         th = wheelAngle(T);
         lit = true;
         litT = 0;
+        resT = 0;
         flashT = 1.6f;
         for (int i = hist.length - 1; i > 0; i--) hist[i] = hist[i - 1];
         hist[0] = result;
         histN = Math.min(hist.length, histN + 1);
-        // chips: winners fly to the wallet, losers are swept away
+        // chips: winners fly to the wallet in the strip, losers are swept to the wheel
         int coins = 0;
         for (int b = 0; b < BETS; b++) {
             if (bets[b] <= 0) continue;
-            float sx = sheetCellX(b), sy = sheetCellY(b);
+            float sx = bx[b] + bw[b] / 2, sy = by[b] + bh[b] / 2;
             int n = won[b] ? Math.min(5, 2 + bets[b] * returnMult(b, result) / 200) : 1;
             for (int j = 0; j < n && flies.size() < 40; j++) {
                 Fly f = new Fly();
                 f.x0 = sx + (j - n / 2f) * 4;
                 f.y0 = sy;
                 f.lose = !won[b];
-                f.x1 = f.lose ? (panX0 + panX1) / 2 : W / 2 + 20;
-                f.y1 = f.lose ? wheelY : lTop - 80;
+                f.x1 = f.lose ? cx : 343;
+                f.y1 = f.lose ? cy : lTop + 15;
                 f.delay = 0.15f + 0.09f * (coins++);
-                f.val = bets[b];
                 flies.add(f);
             }
         }
@@ -344,103 +391,127 @@ final class RouletteMini extends Mini {
         java.util.Arrays.fill(bets, 0);
         total = 0;
         float mx = (panX0 + panX1) / 2;
-        if (net > 0) {
-            msg = "זכית " + Ui.nis(net);
-            msgCol = Ui.GOOD;
-            h.text(mx, wheelY + wheelH * 0.5f, "+" + Ui.nis(win), Ui.ACCENT);
-            h.burst(mx, wheelY + wheelH * 0.5f, Ui.ACCENT, net >= lastTotal * 5 ? 26 : 12);
-            h.sfx(net >= lastTotal * 5 ? Sfx.PERFECT : Sfx.COIN);
-        } else if (net == 0 && win > 0) {
-            msg = "יצאת בלי הפסד";
-            msgCol = Ui.INK;
-            h.sfx(Sfx.GOOD);
-        } else {
-            msg = "הפסדת " + Ui.nis(-net);
-            msgCol = Ui.BAD;
-            h.sfx(Sfx.BAD);
-            if (result == 0) h.shake(5);
-        }
+        lostLast = Cards.Room.resultFx(h, mx, cy, lastStake, lastWin) == Cards.Room.LOST;
+        if (result == 0 && lostLast) h.shake(5);
         h.sfx(Sfx.DING);
         fixChip();
     }
 
     // ---- touches ----
 
+    private boolean idle() {
+        return state == BET && resT >= Cards.Room.RESULT_HOLD;
+    }
+
+    /** The big wheel covers the table on a short screen while it spins and for a moment after. */
+    private boolean bigView() {
+        return compact && (state == SPIN || resT < SHOW);
+    }
+
+    private boolean enabled(int id) {
+        if (id < BETS) {
+            if (!idle() || h.money() < CHIPS[chip] || bigView()) return false;
+            if (sheet) return id <= 36 && (!compact || id == 0 || page == (id - 1) / 18);
+            return id >= 37;
+        }
+        int money = h.money();
+        switch (id) {
+            case I_NUM:
+                return idle() && !bigView();
+            case I_PAGE:
+                return idle() && sheet && compact;
+            case I_EXIT:
+                return idle();
+            case I_CLEAR:
+                return idle() && total > 0;
+            case I_AGAIN:
+                return idle() && lastTotal > 0 && lastTotal <= TABLE_MAX && money + total >= lastTotal && !sameAsLast();
+            case I_SPIN:
+                return idle() && total > 0;
+            default:
+                return id >= I_CHIP && id < I_CHIP + 4 && idle() && money >= CHIPS[id - I_CHIP];
+        }
+    }
+
+    private boolean sameAsLast() {
+        for (int b = 0; b < BETS; b++) if (bets[b] != last[b]) return false;
+        return true;
+    }
+
+    private int hitId(float x, float y) {
+        for (int i = 0; i < NI; i++) {
+            if (enabled(i) && Ui.in(x, y, bx[i], by[i], bw[i], bh[i])) return i;
+        }
+        return -1;
+    }
+
     @Override
     void down(float x, float y) {
-        buildButtons();
-        if (exitB.hit(x, y)) {
-            if (total > 0) h.pay(total);
-            java.util.Arrays.fill(bets, 0);
-            total = 0;
-            leave = true;
+        pressId = hitId(x, y);
+        pressT = 0.14f;
+    }
+
+    @Override
+    void up(float x, float y) {
+        int id = hitId(x, y);
+        if (id >= 0 && id == pressId) act(id);
+        pressId = -1;
+    }
+
+    private void act(int id) {
+        if (!enabled(id)) return;
+        if (id < BETS) {
+            addBet(id);
             return;
         }
-        if (state != BET) return;
-        if (spinB.hit(x, y)) {
-            startSpin();
-            return;
-        }
-        if (clearB.hit(x, y)) {
-            if (total > 0) {
-                h.pay(total);
-                java.util.Arrays.fill(bets, 0);
-                total = 0;
+        switch (id) {
+            case I_NUM:
+                sheet = !sheet;
+                h.sfx(Sfx.TAP);
+                break;
+            case I_PAGE:
+                page = 1 - page;
+                h.sfx(Sfx.TAP);
+                break;
+            case I_EXIT:
+                clearTable();
+                leave = true;
+                break;
+            case I_CLEAR:
+                clearTable();
                 h.sfx(Sfx.TICK);
-            }
-            return;
-        }
-        if (againB.hit(x, y)) {
-            if (total > 0) h.pay(total);
-            java.util.Arrays.fill(bets, 0);
-            total = 0;
-            if (lastTotal > 0 && h.pay(-lastTotal)) {
-                System.arraycopy(last, 0, bets, 0, BETS);
-                total = lastTotal;
+                break;
+            case I_AGAIN:
+                clearTable();
+                if (h.pay(-lastTotal)) {
+                    System.arraycopy(last, 0, bets, 0, BETS);
+                    total = lastTotal;
+                    h.sfx(Sfx.TAP);
+                }
+                break;
+            case I_SPIN:
+                startSpin();
+                break;
+            default:
+                chip = id - I_CHIP;
+                h.setVar("casino.roulette.chip", chip);
                 h.sfx(Sfx.TAP);
-            }
-            return;
-        }
-        if (numB.hit(x, y)) {
-            sheet = !sheet;
-            h.sfx(Sfx.TAP);
-            return;
-        }
-        for (int i = 0; i < chipB.length; i++) {
-            if (chipB[i].hit(x, y)) {
-                chip = i;
-                h.setVar("casino.roulette.chip", i);
-                h.sfx(Sfx.TAP);
-                return;
-            }
-        }
-        int from = sheet ? 0 : B_RED, to = sheet ? 37 : BETS;
-        for (int b = from; b < to; b++) {
-            if (Ui.in(x, y, bx[b], by[b], bw[b], bh[b])) {
-                addBet(b);
-                return;
-            }
         }
     }
 
     private void addBet(int b) {
         int v = CHIPS[chip];
-        if (h.pay(-v)) {
+        if (total + v > TABLE_MAX) {
+            h.text(bx[b] + bw[b] / 2, by[b], "עד " + Ui.nis(TABLE_MAX) + " לסיבוב", Ui.INK);
+            h.sfx(Sfx.TICK);
+        } else if (h.pay(-v)) {
             bets[b] += v;
             total += v;
             h.sfx(Sfx.TAP);
         } else {
-            h.text(bx[b] + bw[b] / 2, by[b], "אין מספיק כסף", Ui.DIM);
+            h.text(bx[b] + bw[b] / 2, by[b], "אין מספיק כסף", Ui.INK);
             h.sfx(Sfx.TICK);
         }
-    }
-
-    private float sheetCellX(int b) {
-        return bx[b] + bw[b] / 2;
-    }
-
-    private float sheetCellY(int b) {
-        return by[b] + bh[b] / 2;
     }
 
     // ---- layout ----
@@ -448,49 +519,74 @@ final class RouletteMini extends Mini {
     private void layout(float top, float bottom) {
         lTop = top;
         lBottom = bottom;
-        float H = bottom - top, gap = 4;
-        rowH = H >= 420 ? 50 : 38;
-        float used = 4 * rowH + 5 * gap;
-        wheelH = Math.min(H - used, 236);
-        float y = top + Math.max(0, (H - used - wheelH) / 2);
-        wheelY = y;
-        y += wheelH + gap;
-        dozY = y;
-        y += rowH + gap;
-        outY = y;
-        y += rowH + gap;
-        chipY = y;
-        y += rowH + gap;
-        actY = y;
+        float gap = 4, rowH = 44;
+        barY = Cards.Room.barY(bottom);
+        trayY = Cards.Room.trayY(bottom);
+        rTop = Cards.Room.below(top) + 4;
+        rBot = Cards.Room.trayTop(bottom) - 4;
+        dozY = rBot - 2 * rowH - gap;
+        outY = dozY + rowH + gap;
+        compact = dozY - gap - rTop < 120;
+        zTop = rTop;
+        zBot = bigView() ? rBot : dozY - gap;
+        wheelH = zBot - zTop;
         R = Math.min(wheelH / 2 - 2, 104);
         cx = 12 + R;
-        cy = wheelY + wheelH / 2;
+        cy = zTop + wheelH / 2;
         panX0 = cx + R + 8;
         panX1 = W - 8;
-        trackR = R - 11;
-        pocketR = R - 17 - (R - 17 - R * 0.5f) * 0.3f;
-        rb = Math.max(3.2f, R * 0.052f);
+        trackR = R - Math.max(5, R * 0.106f);
+        // the ball rests 30% of the way in from the pockets' outer rim (rO) toward the hub (rI)
+        pocketR = (R - Math.max(8, R * 0.163f)) * 0.7f + R * 0.5f * 0.3f;
+        rb = Math.max(2.6f, R * 0.052f);
 
         float tw = (W - 16 - 2 * gap) / 3;
         int[] dz = {B_D1, B_D2, B_D3};
-        for (int i = 0; i < 3; i++) {
-            set(dz[i], 8 + i * (tw + gap), dozY, tw, rowH);
-        }
+        // reading right to left: the first dozen sits at the right
+        for (int i = 0; i < 3; i++) set(dz[i], W - 8 - (i + 1) * tw - i * gap, dozY, tw, rowH);
         float ow = (W - 16 - 5 * gap) / 6;
         int[] out = {B_LOW, B_EVEN, B_RED, B_BLACK, B_ODD, B_HIGH};
-        for (int i = 0; i < 6; i++) {
-            set(out[i], 8 + i * (ow + gap), outY, ow, rowH);
-        }
-        // the number sheet covers the wheel, dozens and colours
-        sheetTop = wheelY;
-        sheetBottom = outY + rowH;
-        float sh = sheetBottom - sheetTop, zh = Math.min(36, sh * 0.15f), g = 3;
-        set(0, 8, sheetTop, W - 16, zh);
-        float cw = (W - 16 - 8 * g) / 9, ch = (sh - zh - 5 * g) / 4;
+        for (int i = 0; i < 6; i++) set(out[i], W - 8 - (i + 1) * ow - i * gap, outY, ow, rowH);
+
+        // The number sheet: the classic table turned on its side, columns of three (3k+1 at the bottom),
+        // the zero column at the right where a Hebrew reader starts. Tall screens show 1-36 at once;
+        // short ones show 1-18 or 19-36 with a page switch under the zero.
+        float g = 3, sh = rBot - rTop;
+        int rowsShown = compact ? 3 : 6;
+        cellW = (W - 16 - 6 * g) / 7;
+        cellH = Math.min(52, (sh - (rowsShown - 1) * g - (compact ? 0 : 6)) / rowsShown);
+        float blockH = 3 * cellH + 2 * g;
+        float sTop = rTop + Math.max(0, (sh - (compact ? blockH : 2 * blockH + 6 + g)) / 2);
         for (int n = 1; n <= 36; n++) {
-            int r = (n - 1) / 9, c = (n - 1) % 9;
-            set(n, 8 + c * (cw + g), sheetTop + zh + g + r * (ch + g), cw, ch);
+            int blk = (n - 1) / 18, k = (n - 1) % 18, col = k / 3, row = 2 - k % 3;
+            float y = sTop + (compact ? 0 : blk * (blockH + 6 + g)) + row * (cellH + g);
+            float x = W - 8 - cellW - (col + 1) * (cellW + g);
+            set(n, x, y, cellW, cellH);
         }
+        float zx = W - 8 - cellW;
+        if (compact) {
+            float zh = (blockH - g) * 0.55f;
+            set(0, zx, sTop, cellW, zh);
+            set(I_PAGE, zx, sTop + zh + g, cellW, blockH - zh - g);
+        } else {
+            set(0, zx, sTop, cellW, 2 * blockH + 6 + g);
+            set(I_PAGE, -100, -100, 0, 0);
+        }
+
+        float r = Cards.Room.CHIP_R;
+        for (int i = 0; i < 4; i++) {
+            float ccx = 8 + r + 3 + i * (2 * r + 10);
+            set(I_CHIP + i, ccx - r - 3, trayY - r - 3, 2 * r + 6, 2 * r + 6);
+        }
+        float nx = bx[I_CHIP + 3] + bw[I_CHIP + 3] + 8;
+        set(I_NUM, nx, trayY - 24, 352 - nx, 48);
+        float p = Cards.Room.PAD, ew = Cards.Room.EXIT_W, bh2 = Cards.Room.BAR_H;
+        set(I_EXIT, p, barY, ew, bh2);
+        float x1 = p + ew + gap;
+        set(I_CLEAR, x1, barY, 70, bh2);
+        set(I_AGAIN, x1 + 70 + gap, barY, 70, bh2);
+        float sx = x1 + 2 * (70 + gap);
+        set(I_SPIN, sx, barY, 360 - p - sx, bh2);
     }
 
     private void set(int b, float x, float y, float w, float hh) {
@@ -500,51 +596,40 @@ final class RouletteMini extends Mini {
         bh[b] = hh;
     }
 
-    private void buildButtons() {
-        boolean idle = state == BET;
-        int money = h.money();
-        exitB = new Btn(0, 8, actY, 62, rowH, "יציאה", idle, false);
-        clearB = new Btn(1, 74, actY, 62, rowH, "נקה", idle && total > 0, false);
-        againB = new Btn(2, 140, actY, 62, rowH, "שוב", idle && lastTotal > 0 && money + total >= lastTotal, false);
-        spinB = new Btn(3, 206, actY, 146, rowH, state == SPIN ? "מסתובב..." : total > 0 ? "סובב!  " + Ui.nis(total) : "סובב!", idle && total > 0, true);
-        float cwid = 56;
-        for (int i = 0; i < 4; i++) {
-            chipB[i] = new Btn(10 + i, 8 + i * (cwid + 4), chipY, cwid, rowH, "", idle && money >= CHIPS[i], false);
-        }
-        int nums = 0;
-        for (int n = 0; n < 37; n++) if (bets[n] > 0) nums++;
-        numB = new Btn(20, 8 + 4 * (cwid + 4), chipY, W - 16 - 4 * (cwid + 4), rowH,
-                sheet ? "סגור" : nums > 0 ? "מספר (" + nums + ")" : "מספר", idle, sheet);
-    }
-
     // ---- drawing ----
 
     @Override
     void draw(Gfx c, float top, float bottom) {
-        if (top != lTop || bottom != lBottom) layout(top, bottom);
-        buildButtons();
+        layout(top, bottom);
         c.fillRoundRect(2, top - 3, W - 4, bottom - top + 6, 14, FELT);
         c.strokeRoundRect(3, top - 2, W - 6, bottom - top + 4, 13, 2, BRASS_D);
 
-        if (!sheet) {
+        if (!sheet || bigView()) {
             drawWheel(c, cx, cy, R, th, lit ? resIdx : -1, litT);
             drawBall(c);
             drawPanel(c);
-            drawTable(c);
+            if (!bigView()) drawTable(c);
         } else {
             drawSheet(c);
         }
-        drawChipRow(c);
-        exitB.draw(c);
-        clearB.draw(c);
-        againB.draw(c);
-        spinB.draw(c);
-        // lamp strip around the spin button while it is live
-        if (spinB.on) {
-            float p = (float) (0.5 + 0.5 * Math.sin(time * 5));
-            c.strokeRoundRect(spinB.x - 2, spinB.y - 2, spinB.w + 4, spinB.h + 4, 12, 2, ((int) (60 + 120 * p) << 24) | 0xFFE08A);
-        }
+        drawTray(c);
+        Cards.Room.exit(c, bx[I_EXIT], by[I_EXIT], bw[I_EXIT], bh[I_EXIT], enabled(I_EXIT), press(I_EXIT));
+        btn(c, I_CLEAR, h.t("נקה", "נקי"), false);
+        btn(c, I_AGAIN, "שוב", false);
+        String spin = state == SPIN ? "מסתובב..." : total > 0 ? h.t("סובב ", "סובבי ") + Ui.nis(total) : h.t("סובב", "סובבי");
+        btn(c, I_SPIN, spin, !lostLast);
         drawFlies(c);
+        String note = awayBet > 0 ? Cards.Room.awayNote(awayBet, awayBack) : histN > 0 && state == BET ? "יצא " + hist[0] : "";
+        int noteCol = awayBet > 0 ? Cards.Room.awayColor(awayBet, awayBack) : histN > 0 ? pocketInk(hist[0]) : Ui.DIM;
+        Cards.Room.strip(c, top, h.money(), total, TABLE_MAX, note, noteCol);
+    }
+
+    private float press(int id) {
+        return pressId == id && pressT > 0 ? 1 : 0;
+    }
+
+    private void btn(Gfx c, int id, String label, boolean gold) {
+        Cards.Room.action(c, bx[id], by[id], bw[id], bh[id], label, enabled(id), gold, press(id));
     }
 
     private static final float[] POLY = new float[12];
@@ -554,14 +639,13 @@ final class RouletteMini extends Mini {
         c.fillCircle(cx + 2, cy + 3, R + 2, 0x66000000);
         c.fillCircle(cx, cy, R, BRASS);
         c.fillCircle(cx, cy, R - 3, BRASS_D);
-        c.fillCircle(cx, cy, R - 5, 0xFF3E2A17);
-        c.fillCircle(cx, cy, R - 15, 0xFF2A1C10);
-        float rO = R - 17, rI = R * 0.5f;
+        c.fillCircle(cx, cy, R - Math.max(3.5f, R * 0.048f), 0xFF3E2A17);
+        float rO = R - Math.max(8, R * 0.163f), rI = R * 0.5f;
+        c.fillCircle(cx, cy, rO + 2, 0xFF2A1C10);
         c.fillCircle(cx, cy, rO, 0xFFB08A3E);
         for (int i = 0; i < 37; i++) {
             int n = ORDER[i];
-            int col = n == 0 ? 0xFF1F8F4E : RED[n] ? 0xFFC8302F : 0xFF1B1D22;
-            wedge(c, cx, cy, rI, rO, th + i * STEP, STEP * 0.84f, col);
+            wedge(c, cx, cy, rI, rO, th + i * STEP, STEP * 0.84f, pocketColor(n));
         }
         if (lit >= 0) {
             float pulse = (float) (0.5 + 0.5 * Math.sin(litT * 7));
@@ -574,7 +658,7 @@ final class RouletteMini extends Mini {
         c.fillCircle(cx, cy, rI - 1, 0xFF5C3A1C);
         c.fillCircle(cx, cy, rI * 0.86f, 0xFF7A4E26);
         for (int k = 0; k < 4; k++) {
-            float a = th * 1.0f + k * (float) Math.PI / 2;
+            float a = th + k * (float) Math.PI / 2;
             c.line(cx, cy, cx + (float) Math.cos(a) * rI * 0.82f, cy + (float) Math.sin(a) * rI * 0.82f, Math.max(2, R * 0.04f), BRASS);
             c.fillCircle(cx + (float) Math.cos(a) * rI * 0.82f, cy + (float) Math.sin(a) * rI * 0.82f, Math.max(2, R * 0.04f), 0xFFE9C873);
         }
@@ -622,19 +706,21 @@ final class RouletteMini extends Mini {
         c.fillCircle(bxp - rb * 0.3f, byp - rb * 0.3f, rb * 0.4f, 0xFFFFFFFF);
     }
 
+    /** History, the big result number and the result words, to the right of the wheel. */
     private void drawPanel(Gfx c) {
         float pw = panX1 - panX0, mx = (panX0 + panX1) / 2;
-        float y = wheelY + Math.max(0, (wheelH - 118) / 2);
-        // last results
         float sp = Math.min(26, pw / 5);
-        for (int i = 0; i < histN; i++) {
-            int n = hist[i];
-            float hx = mx + ((histN - 1) / 2f - i) * sp;
-            c.fillCircle(hx, y + 12, 12, pocketColor(n));
-            c.text(String.valueOf(n), hx, y + 17, 12, 0xFFFFFFFF, Gfx.CENTER);
+        if (wheelH < 100) {
+            // short screen, betting: one row of history and one line of words
+            float y = zTop + 4;
+            for (int i = 0; i < histN; i++) ball(c, mx + ((histN - 1) / 2f - i) * sp, y + 12, 11, hist[i]);
+            if (histN == 0) c.text("אין תוצאות עדיין", mx, y + 17, 12, Ui.DIM, Gfx.CENTER);
+            line(c, mx, zBot - 8, pw, 15);
+            return;
         }
+        float y = zTop + Math.max(0, (wheelH - 124) / 2);
+        for (int i = 0; i < histN; i++) ball(c, mx + ((histN - 1) / 2f - i) * sp, y + 12, 12, hist[i]);
         if (histN == 0) c.text("אין תוצאות עדיין", mx, y + 17, 12, Ui.DIM, Gfx.CENTER);
-        // big number
         float by0 = y + 56;
         if (state == SPIN) {
             c.fillCircle(mx, by0, 25, 0xFF0A2A1D);
@@ -647,31 +733,56 @@ final class RouletteMini extends Mini {
         } else {
             c.fillCircle(mx, by0, 25, 0xFF0A2A1D);
         }
-        String m = msg.isEmpty() ? (total > 0 ? "מוכנים לסיבוב" : "הניחו הימור") : msg;
-        int mc = msg.isEmpty() ? Ui.INK : msgCol;
-        c.text(m, mx, y + 101, 15, mc, Gfx.CENTER);
-        c.text("על השולחן: " + Ui.nis(total), mx, y + 118, 13, total > 0 ? Ui.ACCENT : Ui.DIM, Gfx.CENTER);
+        line(c, mx, y + 104, pw, 17);
+    }
+
+    /** The panel's words: the result of the last spin, or what to do now. */
+    private void line(Gfx c, float mx, float y, float pw, float size) {
+        if (state == SPIN) {
+            c.text("הכדור מסתובב", mx, y, Ui.fit(c, "הכדור מסתובב", pw, size - 2), Ui.DIM, Gfx.CENTER);
+        } else if (spunOnce && total == 0) {
+            String hl = Cards.Room.headline(lastStake, lastWin);
+            c.text(hl, mx, y, Ui.fit(c, hl, pw, size), Cards.Room.headlineColor(lastStake, lastWin), Gfx.CENTER);
+            if (wheelH >= 100) {
+                String d = Cards.Room.detail(lastStake, lastWin);
+                c.text(d, mx, y + 18, Ui.fit(c, d, pw, 12), 0xFFC9D2DC, Gfx.CENTER);
+            }
+        } else {
+            boolean broke = h.money() < CHIPS[0] && total == 0;
+            String m = broke ? "אין מספיק כסף לשחק" : total > 0 ? h.t("מוכן? סובב", "מוכנה? סובבי") : h.t("הנח אסימונים", "הניחי אסימונים");
+            c.text(m, mx, y, Ui.fit(c, m, pw, size - 2), broke ? Ui.BAD : Ui.INK, Gfx.CENTER);
+        }
+    }
+
+    private void ball(Gfx c, float x, float y, float r, int n) {
+        c.fillCircle(x, y, r, pocketColor(n));
+        c.text(String.valueOf(n), x, y + r * 0.4f, 12, 0xFFFFFFFF, Gfx.CENTER);
     }
 
     private static int pocketColor(int n) {
         return n == 0 ? 0xFF1F8F4E : RED[n] ? 0xFFC8302F : 0xFF1B1D22;
     }
 
+    /** The pocket colour as legible text on the dark strip. */
+    private static int pocketInk(int n) {
+        return n == 0 ? Ui.GOOD : RED[n] ? 0xFFFF7A7A : Ui.INK;
+    }
+
     private void drawTable(Gfx c) {
-        boolean can = state == BET && h.money() >= CHIPS[chip];
         String[] lab = {"1-12", "13-24", "25-36"};
         int[] dz = {B_D1, B_D2, B_D3};
-        for (int i = 0; i < 3; i++) cell(c, dz[i], lab[i], FELT2, 0xFFF3E6C2, can);
-        cell(c, B_LOW, "1-18", FELT2, 0xFFF3E6C2, can);
-        cell(c, B_EVEN, "זוגי", FELT2, 0xFFF3E6C2, can);
-        cell(c, B_RED, "אדום", 0xFFB02828, 0xFFFFFFFF, can);
-        cell(c, B_BLACK, "שחור", 0xFF1B1D22, 0xFFFFFFFF, can);
-        cell(c, B_ODD, "אי-זוגי", FELT2, 0xFFF3E6C2, can);
-        cell(c, B_HIGH, "19-36", FELT2, 0xFFF3E6C2, can);
+        for (int i = 0; i < 3; i++) cell(c, dz[i], lab[i], FELT2, 0xFFF3E6C2);
+        cell(c, B_LOW, "1-18", FELT2, 0xFFF3E6C2);
+        cell(c, B_EVEN, "זוגי", FELT2, 0xFFF3E6C2);
+        cell(c, B_RED, "אדום", 0xFFB02828, 0xFFFFFFFF);
+        cell(c, B_BLACK, "שחור", 0xFF1B1D22, 0xFFFFFFFF);
+        cell(c, B_ODD, "אי-זוגי", FELT2, 0xFFF3E6C2);
+        cell(c, B_HIGH, "19-36", FELT2, 0xFFF3E6C2);
     }
 
     /** One bet cell: label, current stake and a gold flash when it won. */
-    private void cell(Gfx c, int b, String label, int fill, int ink, boolean en) {
+    private void cell(Gfx c, int b, String label, int fill, int ink) {
+        boolean en = enabled(b);
         float x = bx[b], y = by[b], w = bw[b], hh = bh[b];
         boolean win = won[b] && flashT > 0 && ((int) (time * 8) % 2 == 0);
         c.fillRoundRect(x, y, w, hh, 7, en || bets[b] > 0 ? fill : Ui.darken(fill, 0.6f));
@@ -679,13 +790,13 @@ final class RouletteMini extends Mini {
         c.strokeRoundRect(x + 0.5f, y + 0.5f, w - 1, hh - 1, 7, 1.5f, bets[b] > 0 || win ? 0xFFFFE08A : 0x99C9A04A);
         int tc = en || bets[b] > 0 ? ink : (ink & 0xFFFFFF) | 0x77000000;
         if (w > 90) {
-            c.text(label, x + w * 0.28f, y + hh / 2 + 5.5f, 16, tc, Gfx.CENTER);
-            c.text("×3", x + w * 0.52f, y + hh / 2 + 4.5f, 12, Ui.darken(tc, 0.7f), Gfx.LEFT);
-            if (bets[b] > 0) goldChip(c, x + w - 20, y + hh / 2, bets[b]);
+            c.text(label, x + w * 0.4f, y + hh / 2 + 5.5f, 16, tc, Gfx.CENTER);
+            c.text("×3", x + w * 0.4f + c.textWidth(label, 16) / 2 + 4, y + hh / 2 + 4.5f, 12, Ui.darken(tc, 0.75f), Gfx.LEFT);
+            if (bets[b] > 0) goldChip(c, x + 16, y + hh / 2, bets[b]);
         } else {
             float ly = bets[b] > 0 ? y + hh - 6 : y + hh / 2 + 5;
-            c.text(label, x + w / 2, ly, 14, tc, Gfx.CENTER);
-            if (bets[b] > 0) goldChip(c, x + w - 13, y + 12, bets[b]);
+            c.text(label, x + w / 2, ly, Ui.fit(c, label, w - 6, 14), tc, Gfx.CENTER);
+            if (bets[b] > 0) goldChip(c, x + w / 2, y + 13, bets[b]);
         }
     }
 
@@ -698,48 +809,48 @@ final class RouletteMini extends Mini {
     }
 
     private void drawSheet(Gfx c) {
-        boolean can = state == BET && h.money() >= CHIPS[chip];
-        c.fillRoundRect(6, sheetTop - 2, W - 12, sheetBottom - sheetTop + 4, 10, FELT2);
+        c.fillRoundRect(6, rTop - 2, W - 12, rBot - rTop + 4, 10, 0xFF0B3A27);
         for (int n = 0; n < 37; n++) {
+            if (compact && n > 0 && (n - 1) / 18 != page) continue;
+            boolean can = enabled(n);
             float x = bx[n], y = by[n], w = bw[n], hh = bh[n];
             int col = pocketColor(n);
             boolean win = won[n] && flashT > 0 && ((int) (time * 8) % 2 == 0);
-            c.fillRoundRect(x, y, w, hh, 5, can || bets[n] > 0 ? col : Ui.darken(col, 0.55f));
-            if (win) c.fillRoundRect(x, y, w, hh, 5, 0x88FFE08A);
-            c.strokeRoundRect(x + 0.5f, y + 0.5f, w - 1, hh - 1, 5, bets[n] > 0 ? 2.2f : 1, bets[n] > 0 ? 0xFFFFE08A : 0x88C9A04A);
+            c.fillRoundRect(x, y, w, hh, 6, can || bets[n] > 0 ? col : Ui.darken(col, 0.55f));
+            if (win) c.fillRoundRect(x, y, w, hh, 6, 0x88FFE08A);
+            c.strokeRoundRect(x + 0.5f, y + 0.5f, w - 1, hh - 1, 6, bets[n] > 0 ? 2.2f : 1, bets[n] > 0 ? 0xFFFFE08A : 0x88C9A04A);
             int ink = can || bets[n] > 0 ? 0xFFFFFFFF : 0x88FFFFFF;
             if (bets[n] > 0) {
-                c.text(String.valueOf(n), x + w / 2, y + hh * 0.42f, 16, ink, Gfx.CENTER);
-                c.fillRoundRect(x + 2, y + hh - 17, w - 4, 15, 7, 0xFFFFC857);
+                c.text(String.valueOf(n), x + w / 2, y + hh * 0.45f, 16, ink, Gfx.CENTER);
+                c.fillRoundRect(x + 3, y + hh - 17, w - 6, 15, 7, 0xFFFFC857);
                 c.text(String.valueOf(bets[n]), x + w / 2, y + hh - 5, 12, 0xFF1A1300, Gfx.CENTER);
             } else {
-                c.text(n == 0 ? "0 - הימור על אפס (פי 36)" : String.valueOf(n), x + w / 2, y + hh / 2 + 6, n == 0 ? 14 : 17, ink, Gfx.CENTER);
+                c.text(String.valueOf(n), x + w / 2, y + hh / 2 + 6.5f, 18, ink, Gfx.CENTER);
             }
+        }
+        // under the zero: what a number pays, or (short screens) the page switch
+        if (compact) {
+            boolean on = enabled(I_PAGE);
+            float x = bx[I_PAGE], y = by[I_PAGE], w = bw[I_PAGE], hh = bh[I_PAGE];
+            c.fillRoundRect(x, y, w, hh, 6, on ? Cards.Room.NEUTRAL : Cards.Room.OFF);
+            float ay = y + hh / 2 - 6;
+            if (page == 0) c.fillPoly(new float[]{x + w / 2 + 6, ay - 6, x + w / 2 - 6, ay, x + w / 2 + 6, ay + 6}, Ui.INK);
+            else c.fillPoly(new float[]{x + w / 2 - 6, ay - 6, x + w / 2 + 6, ay, x + w / 2 - 6, ay + 6}, Ui.INK);
+            c.text(page == 0 ? "19-36" : "1-18", x + w / 2, y + hh - 8, 12, Ui.INK, Gfx.CENTER);
+        } else {
+            c.text("פי 36", bx[0] + bw[0] / 2, by[0] + bh[0] - 12, 12, 0xCCFFFFFF, Gfx.CENTER);
         }
     }
 
-    private void drawChipRow(Gfx c) {
-        int[] cols = {0xFF3B7DD8, 0xFF2F9E5B, 0xFF8E52C8, 0xFF22262E};
+    private void drawTray(Gfx c) {
         for (int i = 0; i < 4; i++) {
-            Btn b = chipB[i];
-            float mx = b.x + b.w / 2, my = b.y + b.h / 2;
-            float r = Math.min(b.h / 2 - 1, 19);
-            boolean sel = i == chip;
-            if (sel) {
-                c.fillCircle(mx, my, r + 4, 0x44FFE08A);
-                c.strokeRoundRect(b.x, b.y, b.w, b.h, 9, 2, 0xFFFFE08A);
-            }
-            int col = b.on ? cols[i] : 0xFF2A2F37;
-            c.fillCircle(mx + 1, my + 2, r, 0x66000000);
-            c.fillCircle(mx, my, r, col);
-            for (int k = 0; k < 8; k++) {
-                float a = k * (float) Math.PI / 4;
-                c.fillCircle(mx + (float) Math.cos(a) * (r - 2.5f), my + (float) Math.sin(a) * (r - 2.5f), 2.1f, b.on ? 0xFFF5F2E6 : 0xFF444B55);
-            }
-            c.fillCircle(mx, my, r - 6, Ui.darken(col, 0.8f));
-            c.text(String.valueOf(CHIPS[i]), mx, my + 4.6f, 13, b.on ? 0xFFFFFFFF : 0xFF666F7C, Gfx.CENTER);
+            int id = I_CHIP + i;
+            Cards.Room.chip(c, bx[id] + bw[id] / 2, by[id] + bh[id] / 2, CHIPS[i], h.money() >= CHIPS[i] && state == BET, i == chip, press(id));
         }
-        numB.draw(c);
+        int nums = 0;
+        for (int n = 0; n < 37; n++) if (bets[n] > 0) nums++;
+        String lab = sheet ? h.t("חזור לשולחן", "חזרי לשולחן") : nums > 0 ? "מספרים (" + nums + ")" : "מספרים";
+        Cards.Room.action(c, bx[I_NUM], by[I_NUM], bw[I_NUM], bh[I_NUM], lab, enabled(I_NUM), false, press(I_NUM));
     }
 
     private void drawFlies(Gfx c) {
@@ -769,37 +880,41 @@ final class RouletteMini extends Mini {
 
     @Override
     void bot(Random r, float skill) {
-        if (state == SPIN) {
+        if (state == SPIN || !idle()) {
             botWait = 12;
             botStep = 0;
             return;
         }
         if (botWait-- > 0) return;
         botWait = 4 + r.nextInt(6);
-        buildButtons();
         if (sheet) {
-            down(numB.x + 2, numB.y + 2);
+            tap(I_NUM);
             return;
         }
         if (botStep == 0) {
             // Leaves after a few spins, or when it can no longer afford the smallest chip.
             if (h.money() < CHIPS[0] || (botSpins >= 2 && r.nextInt(4) == 0) || botSpins >= 40) {
                 botSpins = 0;
-                down(exitB.x + 4, exitB.y + 4);
+                tap(I_EXIT);
                 return;
             }
-            down(chipB[0].x + 4, chipB[0].y + 4);
+            tap(I_CHIP + (h.money() >= CHIPS[1] ? 1 : 0));
             botStep = 1;
         } else if (botStep == 1 || botStep == 2) {
             int[] even = {B_RED, B_BLACK, B_ODD, B_EVEN, B_LOW, B_HIGH};
-            int b = even[r.nextInt(even.length)];
-            down(bx[b] + 4, by[b] + 4);
+            tap(even[r.nextInt(even.length)]);
             botStep = botStep == 1 && r.nextBoolean() ? 2 : 3;
         } else {
-            down(spinB.x + 4, spinB.y + 4);
+            tap(I_SPIN);
             botSpins++;
             botStep = 0;
             botWait = 3;
         }
+    }
+
+    private void tap(int id) {
+        float x = bx[id] + bw[id] / 2, y = by[id] + bh[id] / 2;
+        down(x, y);
+        up(x, y);
     }
 }

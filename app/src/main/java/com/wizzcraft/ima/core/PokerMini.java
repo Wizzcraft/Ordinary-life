@@ -6,23 +6,50 @@ import java.util.Random;
 /**
  * Casino video poker (a venue): Jacks or Better, five-card draw, the full-pay 9/6 table. Choose a
  * coin value and 1-5 coins, deal, tap cards to hold, draw once. The deck is a fresh honest shuffle
- * every hand; nothing looks at it or steers it. The bet leaves the wallet at the deal, the win is
- * paid once at the draw; pause() returns a bet whose hand has not been drawn.
+ * every hand; nothing looks at it or steers it. The bet leaves the wallet at the deal and the win is
+ * paid once, at the draw.
  *
- * Persistent variables: casino.pk.coins (1..5), casino.pk.val (index into VALUES).
+ * pause() never refunds a dealt hand: it draws to the cards held at that moment and pays the result
+ * (a hand interrupted while it is still being dealt has nothing held yet, so all five are replaced).
+ *
+ * Persistent variables: casino.pk.coins (1..5), casino.pk.val (index into VALUES, stored plus one so
+ * that an unset variable means "default").
  */
 final class PokerMini extends Mini {
+    // ================================================================ stakes
+    // One block for the economy designer. Every amount is in shekels.
+    /** Coin values the player can choose. */
+    static final int[] VALUES = {1, 2, 5, 10};
+    /** Coins per hand, 1..MAX_COINS. The largest bet is MAX_COINS x the largest value = ₪50. */
+    static final int MAX_COINS = 5;
+    /** Most that can ride on one hand at any casino table. */
+    static final int TABLE_MAX = 100;
+    /** Coin value picked on a first visit (index into VALUES). */
+    private static final int DEFAULT_VALUE = 1;
+    // The pay table below is the full-pay 9/6 table and sets the return to player (99.5% with perfect
+    // play); retune the stakes above, not the table, unless the return is meant to change.
+    // ================================================================
+
     // ---- pure rules, shared with the odds check ----
     static final int NONE = 0, JACKS = 1, TWO_PAIR = 2, TRIPS = 3, STRAIGHT = 4, FLUSH = 5, FULL = 6, QUADS = 7,
             STRAIGHT_FLUSH = 8, ROYAL = 9;
-    /** Payout per coin by hand rank (royal handled in {@link #pay}). */
+    /** Coins paid per coin bet, by hand rank (the royal on a full five-coin bet is handled in {@link #pay}). */
     private static final int[] PER_COIN = {0, 1, 2, 3, 4, 6, 9, 25, 50, 250};
-    private static final String[] NAMES = {"", "זוג נסיכים ומעלה", "שני זוגות", "שלישייה", "רצף", "צבע", "פול האוס",
+    /** A royal flush on a full MAX_COINS bet pays this per coin instead of 250 (4000 coins). */
+    private static final int ROYAL_MAX_PER_COIN = 800;
+    static final String[] NAMES = {"", "זוג נסיכים ומעלה", "שני זוגות", "שלישייה", "רצף", "צבע", "פול האוס",
+            "רביעייה", "סטרייט פלאש", "רויאל פלאש"};
+    private static final String[] SHORT = {"", "נסיכים ומעלה", "שני זוגות", "שלישייה", "רצף", "צבע", "פול האוס",
             "רביעייה", "סטרייט פלאש", "רויאל פלאש"};
 
     /** Payout per coin: the royal flush pays 250 a coin, and 800 a coin on a full five-coin bet. */
     static int pay(int rank, int coins) {
-        return rank == ROYAL && coins == 5 ? 800 : PER_COIN[rank];
+        return rank == ROYAL && coins == MAX_COINS ? ROYAL_MAX_PER_COIN : PER_COIN[rank];
+    }
+
+    /** Shekels paid back for a hand of this rank on a bet of coins x value: the one payout formula. */
+    static int payout(int rank, int coins, int value) {
+        return pay(rank, coins) * coins * value;
     }
 
     static int rank(int[] c) {
@@ -68,7 +95,7 @@ final class PokerMini extends Mini {
         for (int i = 0; i < 5; i++) {
             int same = 0;
             for (int j = 0; j < 5; j++) if (Cards.rank(c[i]) == Cards.rank(c[j])) same++;
-            if (same >= 2) m |= 1 << i;
+            if (same >= 2 && (rank != JACKS || Cards.rank(c[i]) >= 9)) m |= 1 << i;
         }
         return m;
     }
@@ -133,10 +160,8 @@ final class PokerMini extends Mini {
                 if (outs == 1) return 0.34 + 0.064 * highs;
                 return 0;
             }
-            default: {
-                int rk = rank(c);
-                return rk == NONE || rk == JACKS || rk == TWO_PAIR || rk == TRIPS ? PER_COIN[rk] : pay(rk, 5);
-            }
+            default:
+                return pay(rank(c), MAX_COINS);
         }
     }
 
@@ -189,7 +214,7 @@ final class PokerMini extends Mini {
             hand[3] = pool[a];
             for (int b = a + 1; b < 47; b++) {
                 hand[4] = pool[b];
-                sum += pay(rank(hand), 5);
+                sum += pay(rank(hand), MAX_COINS);
             }
         }
         return sum / (47 * 46 / 2);
@@ -210,23 +235,27 @@ final class PokerMini extends Mini {
     }
 
     // ---- the machine ----
-    private static final int[] VALUES = {2, 5, 10, 20};
     private static final int BET = 0, DEAL = 1, HOLD = 2, DRAW = 3;
-    // buttons: 0 value, 1 coins, 2 exit, 3 max, 4 deal, 5 draw, 6..10 cards
-    private static final int B_VAL = 0, B_COINS = 1, B_EXIT = 2, B_MAX = 3, B_DEAL = 4, B_DRAW = 5, B_CARD = 6, NB = 11;
+    // buttons: 0..3 coin-value chips, then the rest
+    private static final int B_COINS = 4, B_EXIT = 5, B_MAX = 6, B_DEAL = 7, B_DRAW = 8, B_CARD = 9, NB = 14;
 
     private Cards.Deck deck;
     private final Cards.Sprite[] hand = new Cards.Sprite[5];
     private final ArrayList<Cards.Sprite> gone = new ArrayList<>();
     private final boolean[] held = new boolean[5];
     private final float[] lift = new float[5];
-    private int phase, coins = 5, vi = 1, staked, rank = NONE, win, scoring, bursts;
-    private boolean exit, resultShown, settledFx, anyHand;
-    private float time, resT, botT, pressT, shownWin;
+    private int phase, coins = MAX_COINS, vi = DEFAULT_VALUE, staked, rank = NONE, win, scoring, betShown;
+    private boolean exit, resultShown, anyHand, lostLast;
+    private float time, resT = 99, botT, pressT, shownWin;
     private int pressId = -1;
-    private String msg = "";
+    /** What an interrupted hand came to, shown in the strip until the next deal. */
+    private int awayBet, awayBack;
+    /** Read by CardsCheck: the stake and the return of the latest drawn hand. */
+    int lastStake, lastBack;
 
-    private float top, bottom, rh, ch, cw, cardsY, rowAy, rowBy, tableH, zoneY;
+    private float top, bottom, rh, ch, cw, cardsY, msgY, tableH, trayTop;
+    private int cols, rows;
+    private boolean compact;
     private final float[] bx = new float[NB], by = new float[NB], bw = new float[NB], bh = new float[NB];
 
     @Override
@@ -241,22 +270,20 @@ final class PokerMini extends Mini {
 
     @Override
     String howTo() {
-        return "לוחצים על קלפים כדי לשמור אותם, ואז מחליפים את השאר. זוג נסיכים ומעלה כבר משלם, ורויאל פלאש משלם בגדול.";
+        return "בוחרים קלפים לשמור ומחליפים את השאר פעם אחת. זוג נסיכים ומעלה כבר מחזיר את ההימור, ורויאל פלאש משלם בגדול.";
     }
 
     @Override
     void begin(int round, float difficulty) {
-        if (staked > 0) {
-            h.pay(staked);
-            staked = 0;
-        }
-        coins = Math.max(1, Math.min(5, (int) h.var("casino.pk.coins")));
-        if (h.var("casino.pk.coins") == 0) coins = 5;
-        vi = Math.max(0, Math.min(VALUES.length - 1, (int) h.var("casino.pk.val")));
-        if (h.var("casino.pk.val") == 0) vi = 1;
+        // Normally pause() has already settled everything; this only guards a begin() without one.
+        settleNow();
+        int c = (int) h.var("casino.pk.coins");
+        coins = c >= 1 && c <= MAX_COINS ? c : MAX_COINS;
+        int v = (int) h.var("casino.pk.val") - 1;
+        vi = v >= 0 && v < VALUES.length ? v : DEFAULT_VALUE;
+        fitBet();
         reset();
-        lay(166, Math.max(h.screenH(), 560) - 96);
-        msg = "";
+        lay(Game.PLAY_TOP, Math.max(h.screenH(), 560) - Game.PLAY_FOOT);
     }
 
     private void reset() {
@@ -270,18 +297,29 @@ final class PokerMini extends Mini {
         rank = NONE;
         win = 0;
         scoring = 0;
-        resultShown = settledFx = anyHand = false;
+        resultShown = anyHand = lostLast = false;
+        resT = 99;
         exit = false;
         pressId = -1;
         botT = 0.5f;
     }
 
+    /**
+     * Settles a dealt hand at once: draws to whatever is held now and pays it. A hand that is
+     * already drawn (paid at the draw) only finishes its show; a bet not yet dealt never left the wallet.
+     */
+    private void settleNow() {
+        if (phase == DEAL || phase == HOLD) doDraw(true);
+        if (phase == DRAW) {
+            finishHand();
+            awayBet = lastStake;
+            awayBack = lastBack;
+        }
+    }
+
     @Override
     void pause() {
-        if (staked > 0) {
-            h.pay(staked);
-            staked = 0;
-        }
+        settleNow();
         reset();
     }
 
@@ -294,29 +332,50 @@ final class PokerMini extends Mini {
         return coins * VALUES[vi];
     }
 
+    /** Steps the bet down to one the wallet covers, if there is one (never below one coin of the smallest value). */
+    private void fitBet() {
+        while (cost() > h.money() && (coins > 1 || vi > 0)) {
+            if (vi > 0) vi--;
+            else coins--;
+        }
+    }
+
     // ------------------------------------------------------------------ layout
 
     private void lay(float t, float b) {
         top = t;
         bottom = b;
         float hh = b - t;
-        rh = Ui.clamp(hh * 0.052f, 15, 19);
-        tableH = rh * 5 + 8;
-        ch = Ui.clamp(hh * 0.22f, 60, 92);
+        compact = hh < 400;
+        cols = compact ? 3 : 2;
+        rows = compact ? 3 : 5;
+        rh = compact ? 15 : Ui.clamp(hh * 0.038f, 16, 19);
+        tableH = rows * rh + 6;
+        float barY = Cards.Room.barY(b);
+        trayTop = Cards.Room.trayTop(b);
+        float cardsTop = Cards.Room.below(top) + 3 + tableH + 8;
+        float msgH = 40;
+        ch = Ui.clamp(trayTop - msgH - cardsTop, 58, 96);
         cw = Math.min(64, ch * 0.7f);
-        rowBy = bottom - 52;
-        rowAy = rowBy - 48;
-        cardsY = top + tableH + 18 + Math.max(0, (rowAy - (top + tableH + 18) - ch - 58) * 0.45f);
-        zoneY = (cardsY + ch + rowAy) / 2 + 2;
+        cardsY = cardsTop + Math.max(0, trayTop - msgH - cardsTop - ch) * 0.35f;
+        msgY = Math.max(cardsY + ch + 20, (cardsY + ch + trayTop) / 2 - 1);
+        msgY = Math.min(msgY, trayTop - 21);
         float gap = Math.min(10, (344 - 5 * cw) / 4);
         float x0 = 180 - (5 * cw + 4 * gap) / 2;
-        for (int i = 0; i < 5; i++) set(B_CARD + i, x0 + i * (cw + gap), cardsY - 14, cw, ch + 14);
-        set(B_VAL, 252, rowAy, 96, 44);
-        set(B_COINS, 132, rowAy, 108, 44);
-        set(B_EXIT, 12, rowAy, 108, 44);
-        set(B_MAX, 12, rowBy, 100, 48);
-        set(B_DEAL, 124, rowBy, 224, 48);
-        set(B_DRAW, 12, rowBy, 336, 48);
+        for (int i = 0; i < 5; i++) set(B_CARD + i, x0 + i * (cw + gap), cardsY - 12, cw, ch + 12);
+        float ty = Cards.Room.trayY(b), r = Cards.Room.CHIP_R;
+        for (int i = 0; i < 4; i++) {
+            float cx = 8 + r + 3 + i * (2 * r + 10);
+            set(i, cx - r - 3, ty - r - 3, 2 * r + 6, 2 * r + 6);
+        }
+        float cx3 = bx[3] + bw[3] + 8;
+        set(B_COINS, cx3, ty - 24, 352 - cx3, 48);
+        float p = Cards.Room.PAD, g = Cards.Room.GAP, ew = Cards.Room.EXIT_W, bh2 = Cards.Room.BAR_H;
+        set(B_EXIT, p, barY, ew, bh2);
+        float x1 = p + ew + g;
+        set(B_MAX, x1, barY, 100, bh2);
+        set(B_DEAL, x1 + 100 + g, barY, 360 - p - (x1 + 100 + g), bh2);
+        set(B_DRAW, x1, barY, 360 - p - x1, bh2);
     }
 
     private void set(int id, float x, float y, float w, float h2) {
@@ -345,8 +404,10 @@ final class PokerMini extends Mini {
 
     private void startDeal() {
         int cst = cost();
-        if (phase != BET || !h.pay(-cst)) return;
+        if (phase != BET || cst > TABLE_MAX || resT < Cards.Room.RESULT_HOLD || !h.pay(-cst)) return;
         staked = cst;
+        betShown = cst;
+        awayBet = awayBack = 0;
         if (deck == null) deck = new Cards.Deck(1);
         deck.shuffle(h.rnd());
         for (int i = 0; i < 5; i++) {
@@ -363,15 +424,15 @@ final class PokerMini extends Mini {
         rank = NONE;
         win = 0;
         scoring = 0;
-        resultShown = settledFx = false;
+        resultShown = false;
         anyHand = true;
-        bursts = 0;
-        msg = "";
         h.sfx(Sfx.WHOOSH);
     }
 
-    private void doDraw() {
-        if (phase != HOLD || !settledAll()) return;
+    /** Replaces every card not held and pays the hand. force skips the wait for the cards to land (pause). */
+    private void doDraw(boolean force) {
+        if (phase != HOLD && !(force && phase == DEAL)) return;
+        if (!force && !settledAll()) return;
         for (int i = 0; i < 5; i++) {
             if (held[i]) continue;
             hand[i].moveTo(400, hand[i].y - lift[i] * 12);
@@ -380,39 +441,29 @@ final class PokerMini extends Mini {
             hand[i] = new Cards.Sprite(deck.draw(), -cw - 10, cardsY, cardX(i), cardsY, 0.1f + i * 0.12f, true);
         }
         rank = rank(cards());
-        win = pay(rank, coins) * VALUES[vi] * coins;
+        win = payout(rank, coins, VALUES[vi]);
         if (win > 0) h.pay(win);
+        lastStake = staked;
+        lastBack = win;
         staked = 0;
         phase = DRAW;
         resT = 0;
-        settledFx = false;
         h.sfx(Sfx.WHOOSH);
     }
 
     private void finishHand() {
-        settledFx = true;
         resultShown = true;
         phase = BET;
         scoring = scoringMask(cards(), rank);
         for (int i = 0; i < 5; i++) hand[i].glow = (scoring >> i & 1) != 0 ? 1 : 0;
         resT = 0;
         shownWin = 0;
-        float cx = 180;
-        if (win > 0) {
-            msg = "זכית";
-            h.text(cx, cardsY + ch * 0.5f, "+" + Ui.nis(win), Ui.ACCENT);
-            int n = rank >= FULL ? 30 : rank >= STRAIGHT ? 18 : 8;
-            h.burst(cx, cardsY + ch * 0.5f, Ui.ACCENT, n);
-            if (rank >= STRAIGHT_FLUSH) {
-                h.burst(80, cardsY + ch * 0.3f, 0xFFFF6B6B, 20);
-                h.burst(280, cardsY + ch * 0.3f, 0xFF5AA9FF, 20);
-            }
-            if (rank >= STRAIGHT) h.shake(rank >= FULL ? 7 : 4);
-            h.sfx(rank >= ROYAL ? Sfx.LEVEL : rank >= FULL ? Sfx.PERFECT : rank >= TRIPS ? Sfx.GOOD : Sfx.COIN);
-        } else {
-            msg = "אין זכייה, ננסה שוב";
-            h.sfx(Sfx.TICK);
+        lostLast = Cards.Room.resultFx(h, 180, cardsY + ch * 0.45f, lastStake, lastBack) == Cards.Room.LOST;
+        if (rank == ROYAL) {
+            // the one hand worth a fanfare: every card bursts in turn
+            for (int i = 0; i < 5; i++) h.burst(cardX(i) + cw / 2, cardsY + ch / 2, i % 2 == 0 ? Ui.ACCENT : 0xFFFF6B6B, 16);
         }
+        fitBet();
     }
 
     // ------------------------------------------------------------------ update
@@ -435,7 +486,6 @@ final class PokerMini extends Mini {
         if (phase == DEAL && settledAll()) {
             phase = HOLD;
             rank = rank(cards());
-            msg = "לחצו על קלפים כדי לשמור";
             if (rank >= JACKS) h.sfx(Sfx.TICK);
         } else if (phase == DRAW && settledAll()) {
             finishHand();
@@ -447,19 +497,25 @@ final class PokerMini extends Mini {
     // ------------------------------------------------------------------ input
 
     private boolean enabled(int id) {
+        boolean ready = phase == BET && resT >= Cards.Room.RESULT_HOLD;
         switch (id) {
-            case B_VAL:
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+                return ready && VALUES[id] <= h.money();
             case B_COINS:
+                return ready && VALUES[vi] <= h.money();
             case B_EXIT:
-                return phase == BET;
+                return ready;
             case B_MAX:
-                return phase == BET && 5 * VALUES[vi] <= h.money();
+                return ready && MAX_COINS * VALUES[vi] <= h.money();
             case B_DEAL:
-                return phase == BET && cost() <= h.money();
+                return ready && cost() <= h.money();
             case B_DRAW:
                 return phase == HOLD && settledAll();
             default:
-                return id >= B_CARD && phase == HOLD && settledAll();
+                return id >= B_CARD && id < NB && phase == HOLD && settledAll();
         }
     }
 
@@ -486,13 +542,19 @@ final class PokerMini extends Mini {
     private void act(int id) {
         if (!enabled(id)) return;
         switch (id) {
-            case B_VAL:
-                vi = (vi + 1) % VALUES.length;
-                h.setVar("casino.pk.val", vi);
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+                vi = id;
+                while (cost() > h.money() && coins > 1) coins--;
+                h.setVar("casino.pk.val", vi + 1);
+                h.setVar("casino.pk.coins", coins);
                 h.sfx(Sfx.TAP);
                 break;
             case B_COINS:
-                coins = coins % 5 + 1;
+                coins = coins % MAX_COINS + 1;
+                if (cost() > h.money()) coins = 1;
                 h.setVar("casino.pk.coins", coins);
                 h.sfx(Sfx.TAP);
                 break;
@@ -500,7 +562,7 @@ final class PokerMini extends Mini {
                 exit = true;
                 break;
             case B_MAX:
-                coins = 5;
+                coins = MAX_COINS;
                 h.setVar("casino.pk.coins", coins);
                 startDeal();
                 break;
@@ -508,7 +570,7 @@ final class PokerMini extends Mini {
                 startDeal();
                 break;
             case B_DRAW:
-                doDraw();
+                doDraw(false);
                 break;
             default: {
                 int i = id - B_CARD;
@@ -525,19 +587,18 @@ final class PokerMini extends Mini {
         if (botT > 0) return;
         botT = 0.3f + r.nextFloat() * 0.3f;
         if (phase == BET) {
+            if (resT < Cards.Room.RESULT_HOLD) return;
             if (!enabled(B_DEAL)) {
-                if (h.money() < VALUES[0]) tap(B_EXIT);
-                else if (coins > 1) tap(B_COINS);
-                else tap(B_VAL);
+                tap(B_EXIT);
                 return;
             }
             if (anyHand && r.nextInt(60) == 0) {
                 tap(B_EXIT);
                 return;
             }
-            int wantCoins = skill >= 0.99f ? 5 : 1 + r.nextInt(5);
-            if (coins != wantCoins) tap(B_COINS);
-            else if (skill >= 0.99f && vi != 1) tap(B_VAL);
+            int wantCoins = skill >= 0.99f ? MAX_COINS : 1 + r.nextInt(MAX_COINS);
+            if (coins != wantCoins && enabled(B_COINS)) tap(B_COINS);
+            else if (skill >= 0.99f && vi != 2 && enabled(2)) tap(2);
             else tap(B_DEAL);
         } else if (phase == HOLD) {
             if (!settledAll()) return;
@@ -576,98 +637,91 @@ final class PokerMini extends Mini {
         for (int i = 0; i < 5; i++) {
             Cards.Sprite s = hand[i];
             if (s == null) {
-                if (phase == BET && !anyHand) {
-                    Cards.card(c, cardX(i), cardsY, cw, ch, 0, 0);
-                }
+                if (phase == BET && !anyHand) Cards.card(c, cardX(i), cardsY, cw, ch, 0, 0);
                 continue;
             }
-            float dy = lift[i] * 12;
+            float dy = lift[i] * 10;
             s.y -= dy;
             s.draw(c, cw, ch, time);
             s.y += dy;
             if (lift[i] > 0.05f) {
                 float tx = cardX(i);
                 c.fillRoundRect(tx + 2, cardsY - dy + ch - 17, cw - 4, 15, 7, 0xFFFFC857);
-                c.text("שמור", tx + cw / 2, cardsY - dy + ch - 5.5f, 12, 0xFF1A1300, Gfx.CENTER);
+                c.text("נשמר", tx + cw / 2, cardsY - dy + ch - 5.5f, 12, 0xFF1A1300, Gfx.CENTER);
             }
         }
         drawZone(c);
         drawControls(c);
+        int shownBet = phase == BET && !resultShown ? cost() : betShown;
+        if (phase == BET && resultShown && resT >= Cards.Room.RESULT_HOLD) shownBet = cost();
+        String note = awayBet > 0 ? Cards.Room.awayNote(awayBet, awayBack) : "";
+        Cards.Room.strip(c, top, h.money(), shownBet, TABLE_MAX, note, Cards.Room.awayColor(awayBet, awayBack));
+    }
+
+    /** What the pay table promises for a rank at the current bet; it is exactly what the draw pays. */
+    int tableAmount(int rk) {
+        return payout(rk, coins, VALUES[vi]);
     }
 
     private void drawTable(Gfx c) {
         // The pay table as a lit panel; the current hand's line is highlighted.
-        c.fillRoundRect(6, top + 6, 348, tableH, 10, 0xCC06140E);
-        c.strokeRoundRect(6, top + 6, 348, tableH, 10, 1.5f, 0x88FFD27A);
-        int hl = phase == HOLD || (phase == BET && resultShown) ? rank : -1;
+        float y0 = Cards.Room.below(top) + 3;
+        c.fillRoundRect(6, y0, 348, tableH, 10, 0xCC06140E);
+        c.strokeRoundRect(6, y0, 348, tableH, 10, 1.5f, 0x88FFD27A);
+        int hl = phase == HOLD || phase == DRAW || (phase == BET && resultShown) ? rank : -1;
         float fs = rh < 16 ? 12 : 13;
+        float colW = 348f / cols;
         for (int k = 0; k < 9; k++) {
-            int rk = 9 - k; // royal first
-            boolean left = k < 5;
-            int row = left ? k : k - 5;
-            float colR = left ? 170 : 346, colL = left ? 14 : 190;
-            float y = top + 10 + row * rh;
+            int rk = 9 - k; // royal first, reading right to left, then down
+            int col = k / rows, row = k % rows;
+            float colR = 354 - col * colW - 8, colL = colR - colW + 14;
+            float y = y0 + 3 + row * rh;
             boolean on = hl == rk;
             if (on) {
                 float pulse = resultShown && win > 0 ? 0.75f + 0.25f * (float) Math.sin(time * 9) : 1;
                 int a = (int) (255 * pulse);
                 c.fillRoundRect(colL - 4, y + 1, colR - colL + 8, rh - 1, 5, (a << 24) | 0xFFC857);
             }
-            int ink = on ? 0xFF1A1300 : rk >= TRIPS && rk != 3 ? 0xFFFFE3A3 : 0xFFD9E7DF;
-            c.text(NAMES[rk], colR, y + rh - 3.5f, fs, ink, Gfx.RIGHT);
-            int val = pay(rk, coins) * VALUES[vi] * coins;
-            c.text(Ui.nis(val), colL, y + rh - 3.5f, fs, ink, Gfx.LEFT);
+            int ink = on ? 0xFF1A1300 : rk >= STRAIGHT ? 0xFFFFE3A3 : 0xFFD9E7DF;
+            String nm = compact ? SHORT[rk] : NAMES[rk];
+            c.text(nm, colR, y + rh - 3.5f, fs, ink, Gfx.RIGHT);
+            c.text(Ui.nis(tableAmount(rk)), colL, y + rh - 3.5f, fs, ink, Gfx.LEFT);
         }
     }
 
     private void drawZone(Gfx c) {
-        // balance pill, left of the zone
-        String s = Ui.nis(h.money());
-        float w = Math.max(60, c.textWidth(s, 15) + 26);
-        float py = cardsY + ch + 6;
-        c.fillRoundRect(8, py, w, 22, 11, 0x77000000);
-        c.fillCircle(19, py + 11, 6, Ui.ACCENT);
-        c.text(s, 8 + w - 8, py + 16.5f, 15, Ui.INK, Gfx.RIGHT);
-        float y = phase == HOLD || phase == DEAL ? (cardsY + ch + rowBy) / 2 + 2 : zoneY;
         if (phase == BET && !anyHand) {
-            c.text(h.money() < VALUES[0] ? "אין מספיק כסף לשחק" : "בחרו הימור וחלקו", 180, y + 4, 18, h.money() < VALUES[0] ? Ui.BAD : Ui.INK, Gfx.CENTER);
+            boolean broke = h.money() < VALUES[0];
+            c.text(broke ? "אין מספיק כסף לשחק" : h.t("בחר מטבע וחלק", "בחרי מטבע וחלקי"), 180, msgY, 18, broke ? Ui.BAD : Ui.INK, Gfx.CENTER);
         } else if (resultShown) {
-            if (win > 0) {
-                c.text("זכית " + Ui.nis((int) shownWin), 180, y + 2, 19 + Math.max(0, 1 - resT * 2) * 4, Ui.ACCENT, Gfx.CENTER);
-                if (resT > 0.6f) c.text(NAMES[rank], 180, y + 20, 13, Ui.DIM, Gfx.CENTER);
-            } else {
-                c.text(msg, 180, y + 4, 16, Ui.DIM, Gfx.CENTER);
-            }
+            Cards.Room.result(c, 180, msgY, rank == NONE ? "אין זכייה" : NAMES[rank], lastStake, lastBack, resT);
         } else if (phase == HOLD) {
-            c.text(msg, 180, y, 15, Ui.INK, Gfx.CENTER);
+            c.text(h.t("סמן קלפים לשמירה ולחץ החלף", "סמני קלפים לשמירה ולחצי החלף"), 180, msgY, 15, Ui.INK, Gfx.CENTER);
+        } else if (phase == DEAL || phase == DRAW) {
+            c.text(phase == DEAL ? "מחלק..." : "מחליף...", 180, msgY, 15, Ui.DIM, Gfx.CENTER);
         }
+    }
+
+    private float press(int id) {
+        return pressId == id && pressT > 0 ? 1 : 0;
     }
 
     private void drawControls(Gfx c) {
-        if (phase == BET) {
-            btn(c, B_VAL, "מטבע " + Ui.nis(VALUES[vi]), false);
-            btn(c, B_COINS, coins + (coins == 1 ? " מטבע" : " מטבעות"), false);
-            btn(c, B_EXIT, "יציאה", false);
-            btn(c, B_MAX, "מקסימום", false);
-            btn(c, B_DEAL, "חלק " + Ui.nis(cost()), true);
-        } else if (phase == HOLD) {
+        for (int i = 0; i < 4; i++) {
+            Cards.Room.chip(c, bx[i] + bw[i] / 2, by[i] + bh[i] / 2, VALUES[i], enabled(i), i == vi, press(i));
+        }
+        Cards.Room.action(c, bx[B_COINS], by[B_COINS], bw[B_COINS], bh[B_COINS],
+                coins == 1 ? "מטבע אחד" : coins + " מטבעות", enabled(B_COINS), false, press(B_COINS));
+        Cards.Room.exit(c, bx[B_EXIT], by[B_EXIT], bw[B_EXIT], bh[B_EXIT], enabled(B_EXIT), press(B_EXIT));
+        if (phase == HOLD || phase == DEAL || phase == DRAW) {
             boolean all = held[0] && held[1] && held[2] && held[3] && held[4];
-            btn(c, B_DRAW, all ? "שמור הכל" : "החלף", true);
+            Cards.Room.action(c, bx[B_DRAW], by[B_DRAW], bw[B_DRAW], bh[B_DRAW], all ? h.t("שמור הכל", "שמרי הכל") : h.t("החלף", "החליפי"),
+                    enabled(B_DRAW), true, press(B_DRAW));
+        } else {
+            Cards.Room.action(c, bx[B_MAX], by[B_MAX], bw[B_MAX], bh[B_MAX], "מקסימום", enabled(B_MAX), false, press(B_MAX));
+            Cards.Room.action(c, bx[B_DEAL], by[B_DEAL], bw[B_DEAL], bh[B_DEAL], h.t("חלק ", "חלקי ") + Ui.nis(cost()),
+                    enabled(B_DEAL), !lostLast, press(B_DEAL));
         }
-    }
-
-    private void btn(Gfx c, int id, String label, boolean primary) {
-        boolean on = enabled(id);
-        Btn bt = new Btn(id, bx[id], by[id], bw[id], bh[id], label, on, primary);
-        int fill = !on ? 0xFF1B2028 : primary ? Ui.ACCENT : 0xFF2C3644;
-        int ink = !on ? 0xFF5B6472 : primary ? 0xFF1A1300 : Ui.INK;
-        if (id == B_EXIT) {
-            c.fillRoundRect(bt.x, bt.y, bt.w, bt.h, 12, 0x88000000);
-            c.strokeRoundRect(bt.x, bt.y, bt.w, bt.h, 12, 1.5f, 0x88FFFFFF);
-            c.text(label, bt.x + bt.w / 2, bt.y + bt.h / 2 + 5.5f, 15, Ui.INK, Gfx.CENTER);
-            return;
-        }
-        Cards.button(c, bt, pressId == id && pressT > 0 ? 1 : 0, fill, ink);
     }
 
     @Override
