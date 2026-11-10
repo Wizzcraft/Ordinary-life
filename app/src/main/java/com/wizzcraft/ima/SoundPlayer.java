@@ -3,7 +3,9 @@ package com.wizzcraft.ima;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.media.SoundPool;
 import android.util.Log;
@@ -24,7 +26,13 @@ import java.io.OutputStream;
 /**
  * Plays the game's synthesized audio. Effects: rendered once by {@link Synth} to WAV files in the cache
  * directory, then played through a {@link SoundPool}. Music: a looping {@link AudioTrack} in streaming
- * mode fed by one thread that owns it (see {@link #musicLoop()} for why).
+ * mode fed by one thread that owns it (see {@link #musicLoop()} for why); each track is rendered once
+ * on a background thread, kept in memory and cached as a WAV for the next start.
+ *
+ * <p>The sound and music switches (opt.sfx, opt.music) live in the engine: with effects off
+ * {@link Game#pollSound()} stays empty, with music off {@link Game#musicTrack()} is -1. This class only
+ * follows those two calls. Audio focus is asked for when music first has to play, so a player who
+ * switched the music off keeps their own podcast; while a phone call holds the focus everything is silent.
  *
  * <p>Audio must never take the game down: every failure is caught, logged and turns into silence.
  * Effects requested before loading has finished are dropped.
@@ -36,7 +44,10 @@ public final class SoundPlayer {
     private static final float SFX_VOLUME = 1.0f;
     /** Music sits under the effects; the composer's mix decides the rest. */
     private static final float MUSIC_VOLUME = 0.7f;
-    private static final float MUSIC_FADE_S = 0.4f;
+    /** Fade in, fade out and the crossfade between two tracks. */
+    private static final float MUSIC_FADE_S = 0.6f;
+    /** Music level while another app asks us to duck (a navigation prompt, a notification). */
+    private static final float MUSIC_DUCK = 0.25f;
     /** Write unit for the music thread, about 23 ms. */
     private static final int CHUNK = 1024;
 
@@ -48,8 +59,22 @@ public final class SoundPlayer {
     private volatile boolean released, paused;
     private volatile int musicWanted = -1;
     private volatile boolean musicBroken;
-    private volatile File cacheDir;                            // set by the loader once the stamp is checked
+    private final Object cacheLock = new Object();
+    private File cacheDir;                                     // guarded by cacheLock, see audioDir()
+    private boolean cacheChecked;                              // guarded by cacheLock
+    private final Object renderLock = new Object();
+    private final short[][] tracks = new short[Music.TRACKS][];   // rendered loops; guarded by lock
+    private final int[] trackState = new int[Music.TRACKS];    // 0 not asked, 1 rendering, 2 ready, 3 failed; guarded by lock
     private int rng = 0x2545F491;                              // frame() thread only
+
+    // Audio focus. The request is made and dropped on the UI thread; the listener only flips flags.
+    private AudioManager audio;
+    private AudioFocusRequest focusRequest;
+    private boolean focusAsk = true;                           // ask at the next frame that wants music
+    private volatile boolean focusHeld;
+    private volatile boolean musicHeld;                        // focus is elsewhere: no music
+    private volatile boolean sfxHeld;                          // a phone call: no effects either
+    private volatile boolean ducked;
 
     public SoundPlayer(Context ctx) {
         Context app = null;
@@ -80,7 +105,13 @@ public final class SoundPlayer {
             while ((s = game.pollSound()) >= 0 && guard++ < 64) play(s);
             int m = game.musicTrack();
             if (m != musicWanted) {
+                if (m >= 0 && musicWanted < 0 && !focusHeld) focusAsk = true;
                 musicWanted = m;
+                wake();
+            }
+            if (m >= 0 && focusAsk && !paused) {
+                focusAsk = false;
+                requestFocus();
                 wake();
             }
         } catch (Throwable t) {
@@ -90,6 +121,7 @@ public final class SoundPlayer {
 
     public void pause() {
         paused = true;
+        abandonFocus();
         SoundPool p = pool;
         if (p != null) {
             try {
@@ -102,6 +134,7 @@ public final class SoundPlayer {
     }
 
     public void resume() {
+        focusAsk = true;
         paused = false;
         SoundPool p = pool;
         if (p != null) {
@@ -116,6 +149,7 @@ public final class SoundPlayer {
 
     /** Frees everything. The music thread releases its own AudioTrack on its way out. */
     public void release() {
+        abandonFocus();
         SoundPool p;
         synchronized (lock) {
             released = true;
@@ -132,11 +166,85 @@ public final class SoundPlayer {
         }
     }
 
+    // --------------------------------------------------------------------------------- audio focus
+
+    private static AudioAttributes musicAttributes() {
+        return new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_GAME)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
+    }
+
+    /** UI thread. If the focus service itself fails we simply play: silence would be the worse fault. */
+    private void requestFocus() {
+        try {
+            if (audio == null) audio = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            if (audio == null) return;
+            if (focusRequest == null) {
+                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(musicAttributes())
+                        .setOnAudioFocusChangeListener(this::onFocusChange)
+                        .setAcceptsDelayedFocusGain(true)      // asked during a call: GAIN arrives when it ends
+                        .build();
+            }
+            int r = audio.requestAudioFocus(focusRequest);
+            boolean granted = r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            focusHeld = granted;
+            musicHeld = !granted;
+            sfxHeld = r == AudioManager.AUDIOFOCUS_REQUEST_DELAYED;
+            ducked = false;
+        } catch (Throwable t) {
+            Log.w(TAG, "audio focus unavailable; playing without it", t);
+            musicHeld = false;
+            sfxHeld = false;
+            ducked = false;
+        }
+    }
+
+    private void abandonFocus() {
+        try {
+            if (audio != null && focusRequest != null) audio.abandonAudioFocusRequest(focusRequest);
+        } catch (Throwable t) {
+            Log.w(TAG, "abandonAudioFocusRequest", t);
+        }
+        focusHeld = false;
+        musicHeld = false;
+        sfxHeld = false;
+        ducked = false;
+    }
+
+    private void onFocusChange(int change) {
+        switch (change) {
+            case AudioManager.AUDIOFOCUS_GAIN:
+                focusHeld = true;
+                musicHeld = false;
+                sfxHeld = false;
+                ducked = false;
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                ducked = true;
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:       // a phone call, an alarm: GAIN follows
+                musicHeld = true;
+                sfxHeld = true;
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS:                 // another player took over for good:
+                focusHeld = false;                             // stay quiet until the app is resumed or
+                musicHeld = true;                              // the music is switched on again
+                sfxHeld = false;
+                ducked = false;
+                break;
+            default:
+                break;
+        }
+        wake();
+    }
+
     // ------------------------------------------------------------------------------------- effects
 
     private void play(int id) {
         SoundPool p = pool;
-        if (p == null || paused || id < 0 || id >= Sfx.COUNT) return;
+        if (p == null || paused || sfxHeld || id < 0 || id >= Sfx.COUNT) return;
         int sample;
         synchronized (lock) {
             sample = soundIds[id];
@@ -155,8 +263,7 @@ public final class SoundPlayer {
     /** Background thread: render (or reuse) the WAVs and load them into a fresh SoundPool. */
     private void loadEffects() {
         try {
-            File dir = prepareCacheDir();
-            cacheDir = dir;
+            File dir = audioDir();
             String[] paths = new String[Sfx.COUNT];
             for (int id = 0; id < Sfx.COUNT && !released; id++) {
                 File f = new File(dir, "sfx_" + id + ".wav");
@@ -208,24 +315,25 @@ public final class SoundPlayer {
      * The music thread. It alone creates, feeds, pauses and releases the AudioTrack, so no AudioTrack
      * call ever races another thread (release() during a write is a known native crash on some
      * devices). It writes non-blocking and sleeps briefly when the buffer is full, so it never hangs
-     * and notices pause, release and track changes within a few milliseconds.
+     * and notices pause, release, focus and track changes within a few milliseconds.
      *
      * <p>Why a streamed AudioTrack: the loop is sample-accurate (we wrap the index ourselves, no decoder
      * gap as with MediaPlayer looping), there is no size limit (SoundPool refuses samples over about
      * 1 MB decoded, and a static AudioTrack must allocate the whole track in shared memory up front),
-     * and fades between tracks are plain multiplication, so changing from day to night never clicks.
+     * and a change of track is a plain mix: the incoming loop fades in while the outgoing one fades out.
+     * The outgoing loop keeps playing until the incoming one is rendered, so a change never leaves a hole.
      */
     private void musicLoop() {
         AudioTrack track = null;
         boolean playing = false;
-        short[] pcm = null;
-        int current = -1, pos = 0, pendingOff = 0, pendingLen = 0, failures = 0;
-        float gain = 0f;
+        short[] a = null, b = null;            // a: the current loop, b: the outgoing one during a crossfade
+        int aId = -1, aPos = 0, bPos = 0, pendingOff = 0, pendingLen = 0, failures = 0;
+        float aGain = 0f, bGain = 0f, duck = 1f;
         final float step = 1f / (MUSIC_FADE_S * SAMPLE_RATE);
         short[] chunk = new short[CHUNK];
         try {
             while (!released && !musicBroken) {
-                if (paused) {
+                if (paused || musicHeld) {
                     if (playing) {
                         track.pause();
                         playing = false;
@@ -234,19 +342,24 @@ public final class SoundPlayer {
                     continue;
                 }
                 int want = musicWanted;
-                // Switch only once the old track has faded out and its last chunk is written.
-                if (want != current && (pcm == null || (gain <= 0f && pendingLen == 0))) {
-                    current = want;
-                    pcm = want >= 0 ? loadMusic(want) : null;
-                    pos = 0;
-                    gain = 0f;
-                    pendingLen = 0;
-                    continue;   // loading can take a while: re-read the flags before playing
+                if (want >= Music.TRACKS) want = -1;
+                // One crossfade at a time; a track that is still rendering waits while the old one plays on.
+                if (want != aId && b == null) {
+                    short[] next = want < 0 ? null : ready(want);
+                    if (want >= 0 && next == null && trackFailed(want)) want = -1;
+                    if (want < 0 || next != null) {
+                        b = a;
+                        bPos = aPos;
+                        bGain = aGain;
+                        a = next;
+                        aId = want;
+                        aPos = 0;
+                        aGain = 0f;
+                    }
                 }
-                if (pcm == null) {
+                if (a == null && b == null && pendingLen == 0) {
                     if (playing) {
-                        track.pause();
-                        track.flush();
+                        track.stop();          // streaming mode: what is already written plays out
                         playing = false;
                     }
                     sleep(100);
@@ -261,13 +374,27 @@ public final class SoundPlayer {
                     }
                 }
                 if (pendingLen == 0) {
-                    float target = want == current ? 1f : 0f;
-                    int len = pcm.length;
+                    float duckTarget = ducked ? MUSIC_DUCK : 1f;
                     for (int i = 0; i < CHUNK; i++) {
-                        if (gain < target) gain = Math.min(target, gain + step);
-                        else if (gain > target) gain = Math.max(target, gain - step);
-                        chunk[i] = (short) (pcm[pos] * gain * MUSIC_VOLUME);
-                        if (++pos >= len) pos = 0;
+                        float s = 0f;
+                        if (a != null) {
+                            if (aGain < 1f) aGain = Math.min(1f, aGain + step);
+                            s = a[aPos] * aGain;
+                            if (++aPos >= a.length) aPos = 0;
+                        }
+                        if (b != null) {
+                            bGain -= step;
+                            if (bGain <= 0f) {
+                                b = null;
+                            } else {
+                                s += b[bPos] * bGain;
+                                if (++bPos >= b.length) bPos = 0;
+                            }
+                        }
+                        if (duck < duckTarget) duck = Math.min(duckTarget, duck + step);
+                        else if (duck > duckTarget) duck = Math.max(duckTarget, duck - step);
+                        s *= MUSIC_VOLUME * duck;
+                        chunk[i] = (short) (s > 32767f ? 32767 : s < -32767f ? -32767 : (int) s);
                     }
                     pendingOff = 0;
                     pendingLen = CHUNK;
@@ -279,6 +406,7 @@ public final class SoundPlayer {
                     releaseTrack(track);
                     track = null;
                     playing = false;
+                    pendingLen = 0;
                     if (++failures >= 5) musicBroken = true;
                     sleep(500);
                     continue;
@@ -295,6 +423,45 @@ public final class SoundPlayer {
             Log.w(TAG, "music stopped; staying silent", t);
         } finally {
             releaseTrack(track);
+        }
+    }
+
+    /**
+     * The PCM of a track if it is in memory, else null; the first request starts a low-priority thread
+     * that renders it (or reads it from the cache) once. Rendering takes a second or more on a phone,
+     * so it must never happen on the UI thread or on the thread that feeds the AudioTrack.
+     */
+    private short[] ready(final int id) {
+        synchronized (lock) {
+            if (trackState[id] == 0) {
+                trackState[id] = 1;
+                try {
+                    Thread t = new Thread(() -> {
+                        short[] pcm;
+                        synchronized (renderLock) {        // one render at a time: less heat, less memory
+                            pcm = released ? null : loadMusic(id);
+                        }
+                        synchronized (lock) {
+                            tracks[id] = pcm;
+                            trackState[id] = pcm != null ? 2 : 3;
+                            lock.notifyAll();
+                        }
+                    }, "ima-music-render");
+                    t.setDaemon(true);
+                    t.setPriority(Thread.MIN_PRIORITY);
+                    t.start();
+                } catch (Throwable t) {
+                    Log.w(TAG, "music render thread did not start", t);
+                    trackState[id] = 3;
+                }
+            }
+            return tracks[id];
+        }
+    }
+
+    private boolean trackFailed(int id) {
+        synchronized (lock) {
+            return trackState[id] == 3;
         }
     }
 
@@ -346,7 +513,7 @@ public final class SoundPlayer {
 
     /** A music track's PCM: from the cache if this build already rendered it, else rendered now. */
     private short[] loadMusic(int trackId) {
-        File dir = cacheDir;
+        File dir = audioDir();
         File f = dir == null ? null : new File(dir, "music_" + trackId + ".wav");
         try {
             if (f != null && f.isFile() && f.length() > 44) {
@@ -374,6 +541,17 @@ public final class SoundPlayer {
     }
 
     // --------------------------------------------------------------------------------------- cache
+
+    /** The checked cache folder (or null). Whichever loader thread comes first does the check; the other waits. */
+    private File audioDir() {
+        synchronized (cacheLock) {
+            if (!cacheChecked) {
+                cacheDir = prepareCacheDir();
+                cacheChecked = true;
+            }
+            return cacheDir;
+        }
+    }
 
     /**
      * The cache folder for this exact build. Keyed on versionCode and also on the install time:

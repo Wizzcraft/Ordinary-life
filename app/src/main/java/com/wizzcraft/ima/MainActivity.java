@@ -3,6 +3,7 @@ package com.wizzcraft.ima;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowInsets;
@@ -18,6 +19,9 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getAttributes().layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+
+        // The volume keys set the media volume even while the game is silent.
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
 
         view = new GameView(this);
 
@@ -61,6 +65,12 @@ public class MainActivity extends Activity {
         } catch (RuntimeException e) {
             // never crash on save
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (view != null) view.release();
+        super.onDestroy();
     }
 
     @Override
