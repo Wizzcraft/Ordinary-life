@@ -852,13 +852,19 @@ public final class Game {
         float bh = n >= 3 ? 44 : 48, gap = 8;
         float buttons = n == 0 ? 48 : n * bh + (n - 1) * gap;
         // A long text shrinks until the whole card, buttons included, fits the screen.
-        float size = 15;
+        float size = 15, frame = 58 + 14 + buttons + 18;
         List<String> lines = Ui.wrap(c, d.body, tw, size);
-        while (size > 11 && 58 + lines.size() * size * 1.4f + 14 + buttons + 18 > h - 24) {
+        while (size > 11 && frame + lines.size() * size * 1.4f > h - 24) {
             size -= 1;
             lines = Ui.wrap(c, d.body, tw, size);
         }
-        float ph = 58 + lines.size() * size * 1.4f + 14 + buttons + 18;
+        // A text far beyond the agreed length is cut rather than allowed to push the buttons off screen.
+        int room = Math.max(1, (int) ((h - 16 - frame) / (size * 1.4f)));
+        if (lines.size() > room) {
+            lines = new ArrayList<>(lines.subList(0, room));
+            lines.set(room - 1, lines.get(room - 1) + "...");
+        }
+        float ph = frame + lines.size() * size * 1.4f;
         float py0 = Math.max(8, (h - ph) / 2);
         c.fillRoundRect(px0, py0, pw, ph, 16, Ui.PANEL);
         c.strokeRoundRect(px0, py0, pw, ph, 16, 1.5f, Ui.PANEL2);

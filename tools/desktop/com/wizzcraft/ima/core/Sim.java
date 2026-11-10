@@ -824,13 +824,14 @@ public final class Sim {
     static void sound() {
         g = new Game();
         check(g.pollSound() == -1 && g.musicTrack() == -1, "silence on the title screen");
+        heard.clear();
         startGame("אישה");
         check(heard.get(Sfx.TAP), "taps tick");
-        heard.clear();
-        frame();
         check(heard.get(Sfx.PHONE), "mom's first message rings");
         closeDialogs();
         check(g.musicTrack() == 0, "day music on the map at nine in the morning");
+        frame();
+        check(g.pollSound() == -1, "a frame empties the queue");
         g.sfx(Sfx.COIN);
         g.sfx(Sfx.DING);
         check(g.pollSound() == Sfx.COIN && g.pollSound() == Sfx.DING && g.pollSound() == -1, "sounds come out in order");
@@ -873,10 +874,11 @@ public final class Sim {
         tapLabel("חזרה");
         heard.clear();
         g.day = 10;
+        g.setVar("eng.morning", 10);
         g.minute = 1439;
         g.money = 2000;
         frames(10);
-        check(heard.get(Sfx.RENT) && g.hasDialog(), "rent day");
+        check(heard.get(Sfx.RENT) && g.hasDialog() && g.money == 2000 - Game.RENT, "rent day");
         closeDialogs();
         heard.clear();
         g.energy = 0.2f;
