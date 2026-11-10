@@ -14,14 +14,26 @@ package com.wizzcraft.ima.core;
  *
  * Effects grammar: assignments separated by ';', each "key=n", "key+=n" or "key-=n", e.g.
  * "lie.job=1;mom.trust-=10;money+=50". Special keys: money, meals, bottles, food, water, energy,
- * gems. Every other key is a persistent variable (see Facts.vars).
+ * hours (the clock moves forward). Every other key is a persistent variable (see Facts.vars).
+ *
+ * A beat with no text and no options is SILENT: it is never shown; at its turn its effects[0] is
+ * applied and the queue moves on. A beat marked {@link #family()} is an unsolicited family moment:
+ * the engine plays at most one of those a day and drops the rest.
  */
 final class Beat {
     final String id, speaker, m, f;
     final String[] options, repliesM, repliesF, effects;
+    /** An unsolicited family moment (mom, dad, the family); see the class comment. */
+    final boolean family;
 
     Beat(String id, String speaker, String m, String f, String[] options, String[] repliesM, String[] repliesF,
          String[] effects) {
+        this(id, speaker, m, f, options, repliesM, repliesF, effects, false);
+    }
+
+    private Beat(String id, String speaker, String m, String f, String[] options, String[] repliesM, String[] repliesF,
+                 String[] effects, boolean family) {
+        this.family = family;
         this.id = id;
         this.speaker = speaker;
         this.m = m;
@@ -44,6 +56,16 @@ final class Beat {
 
     /** The same beat with an effect applied when it is shown (for beats without options). */
     Beat effect(String e) {
-        return new Beat(id, speaker, m, f, options, repliesM, repliesF, new String[]{e});
+        return new Beat(id, speaker, m, f, options, repliesM, repliesF, new String[]{e}, family);
+    }
+
+    /** The same beat marked as an unsolicited family moment. */
+    Beat family() {
+        return new Beat(id, speaker, m, f, options, repliesM, repliesF, effects, true);
+    }
+
+    /** A beat that only changes variables: never shown. */
+    static Beat silent(String effects) {
+        return new Beat("", "", "", "", null, null, null, new String[]{effects}, false);
     }
 }

@@ -12,8 +12,17 @@ final class Facts {
     String name = "";
     /** day counts from 1; a month is 10 days; the year (and the game) is 12 months. */
     int day, month, dayOfMonth, daysToRent;
-    /** Minutes since midnight. */
+    /** Minutes since midnight, and the hour of the day 0..23. */
     float minute;
+    int hour;
+    /** The building the player is in or at the door of (a City id), or -1 out on the street. */
+    int place = -1;
+    /** Living in the hostel after an eviction. */
+    boolean homeless;
+    /** What is owed after fines and bills that could not be paid (paid off from wages). */
+    int debt;
+    /** Today's unsolicited family moment has already happened: do not offer another. */
+    boolean familyToday;
     int money, rentDue, rentDebt, rentMissed, shiftsDone;
     /** Needs, 0..100. */
     float food, water, energy;

@@ -58,9 +58,12 @@ abstract class Mini {
     }
 
     /**
-     * The app is going to the background or the session is being interrupted. Settle anything in
-     * flight fairly (for example, return a bet that has not been resolved). A round interrupted
-     * this way is replayed from begin().
+     * The app is going to the background, the player opened the menu, or the visit is ending.
+     * SETTLE what is already decided and never give anything back: a spun wheel pays the number it
+     * was going to land on, a blackjack hand stands and is resolved, a bet that is on the table is
+     * played out or lost. Leaving must never be a way to take a stake back. A shift round
+     * interrupted this way is replayed from begin() once per shift (after that it counts as a
+     * MISS); the host decides that, not the Mini.
      */
     void pause() {
     }
