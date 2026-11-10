@@ -1198,10 +1198,11 @@ public final class Sim {
         frame();
         check(drawn().contains("מקצוען") && heard.get(Sfx.LEVEL), "promotion beat and its fanfare");
         closeDialogs();
-        check(drawn().contains("מקצוען") && drawn().contains(Ui.nis(Math.round(30 * 1.25f))), "the menu shows the new rank and rate");
         g.lastShiftDay = 0;
         g.minute = 9 * 60;
         g.energy = 95;
+        frame();
+        check(drawn().contains("מקצוען · " + Ui.nis(Math.round(30 * 1.25f)) + " לשעה"), "the menu shows the new rank and rate: " + drawn());
         check(tapLabel("להתחיל משמרת: טבח"), "next shift");
         s = playShift(new Random(9), 1f);
         int[] exp = expectedPay(s, g.stat(Host.CHA));
@@ -1426,13 +1427,12 @@ public final class Sim {
         check(!g.hasDialog(), "and only once that day");
         // The same morning on the street: the call comes at six.
         fresh();
-        g.day = 13;
-        g.minute = 5 * 60 + 50;
+        g.day = 14;
+        g.minute = 5 * 60 + 40;
         g.setVar("eng.morning", 13);
         g.setVar("eng.week", 1);
-        g.day = 14;
         frames(20);
-        check(!g.hasDialog(), "not before six");
+        check(!g.hasDialog() && g.minute < 6 * 60, "not before six");
         frames(30);
         check(g.hasDialog() && g.var("eng.week") == 2, "at six, wherever the player is");
         reload();
@@ -1634,8 +1634,7 @@ public final class Sim {
 
     /** Leaves the alley until the wanted event (or none) comes up. */
     static void leaveAlleyUntil(String id) {
-        for (int seed = 0; seed < 500; seed++) {
-            g.rnd.setSeed(seed);
+        for (int i = 0; i < 500; i++) {
             Crime.leaveAlley(g);
             if (g.screen instanceof EventScreen && ((EventScreen) g.screen).id.equals(id)) return;
         }
@@ -1648,12 +1647,13 @@ public final class Sim {
         check(tapLabel("שולחן ניסיון") && g.screen instanceof VenueScreen, "the alley opens once its Mini is registered");
         frame();
         tap(100, venue().betY() + 20);
+        frame();
         check(g.var("heat") == 25 && heard.get(Sfx.SIREN), "the Mini heats the street");
         // Through the real exit button: at heat 100 trouble waits six times out of ten.
         g.setVar("heat", 100);
         int trouble = 0;
+        g.rnd.setSeed(42);
         for (int i = 0; i < 400; i++) {
-            g.rnd.setSeed(1000 + i);
             g.screen = VenueScreen.open(g, "alley", City.ALLEY);
             frame();
             tap(180, venue().exitY() + 20);
@@ -1665,7 +1665,6 @@ public final class Sim {
         g.setVar("heat", 0);
         trouble = 0;
         for (int i = 0; i < 2000; i++) {
-            g.rnd.setSeed(5000 + i);
             Crime.leaveAlley(g);
             if (g.screen instanceof EventScreen) trouble++;
         }
@@ -1695,7 +1694,8 @@ public final class Sim {
         check(g.money == 600 && g.var("day.spent") == spent + 400, "fine");
         check(g.var("alley.q0") == 0 && g.var("alley.q3") == 0 && g.var("alley.cap") == 20 && g.var("alley.debt") == 100,
                 "the goods are gone, the rest of the alley's notes are not");
-        check(g.var("record") == 1 && g.var("arrests") == 1 && g.var("heat") == 10 && g.facts().record, "a record, and the street cools");
+        // Heat drops to 10 at the arrest and by another 10 at the midnight spent in the cell.
+        check(g.var("record") == 1 && g.var("arrests") == 1 && g.var("heat") == 0 && g.facts().record, "a record, and the street cools");
         check(g.day == day + 1 && g.minute == 8 * 60 && g.at == City.HOME && g.screen instanceof MapScreen && g.energy == 45,
                 "released the next morning, at home");
         reload();
@@ -1711,7 +1711,8 @@ public final class Sim {
         frame();
         check(drawn().contains("קנס של ₪800"), "repeat offender");
         tapLabel("המשך");
-        check(g.money == -200 && g.var("arrests") == 2 && g.day == day && g.minute == 8 * 60, "fined into debt, out the same morning");
+        check(g.money == -200 && g.var("arrests") == 2 && g.day == day && g.minute == 8 * 60 && g.var("heat") == 10,
+                "fined into debt, out the same morning");
 
         // An escape changes nothing.
         enter(City.ALLEY, 23 * 60);
@@ -1821,9 +1822,9 @@ public final class Sim {
 
         old = loaded(V2.replace("at=5", "at=7") + "dialogs=;scr=sleep;sl=312.5;");
         check(old.screen instanceof SleepScreen, "v2: asleep");
-        float t0 = clock();
         for (int i = 0; i < 400 && g.screen instanceof SleepScreen; i++) frame();
-        check(Math.abs(clock() - t0 - 312.5f) < 1 && g.screen instanceof SummaryScreen, "v2: the rest of the night passes and ends with the new summary");
+        check(Math.abs(g.minute - (674.0041f + 312.5f)) < 0.5f && g.screen instanceof SummaryScreen,
+                "v2: the rest of the night passes and ends with the new summary");
 
         old = loaded(V2.replace("over=false", "over=true").replace("endReason=", "endReason=זהו%3b נגמר") + "dialogs=;scr=end;");
         check(old.screen instanceof EndScreen && old.endReason.equals("זהו; נגמר") && old.endTitle.isEmpty(), "v2: game over");
@@ -1992,6 +1993,8 @@ public final class Sim {
         frames(30);
         check(g.screen == s && s.state == ShiftScreen.PAUSED && tapLabel("ממשיכים") && s.playing(), "resume: pause and continue in place");
         check(playShift(r, 0.9f) != null, "resume: the shift ends");
+        // Let the last floating "+₪" fade: game feel is not part of the save.
+        frames(45);
         String card = drawn();
         reload();
         check(g.screen instanceof ShiftScreen && drawn().equals(card) && g.shiftsDone == 1, "resume: end card survives word for word");
