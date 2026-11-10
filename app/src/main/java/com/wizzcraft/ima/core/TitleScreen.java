@@ -71,6 +71,11 @@ final class TitleScreen extends Screen {
             g.screen = new StoreScreen(g, StoreScreen.FROM_TITLE);
             return;
         }
+        if (b.id == TEST) {
+            confirm = 0;
+            g.screen = new TestMenuScreen(g);
+            return;
+        }
         if (b.id == 0) {
             g.screen = new MapScreen(g);
             return;
@@ -82,7 +87,7 @@ final class TitleScreen extends Screen {
         g.screen = new NameScreen(g, b.id == 2);
     }
 
-    private static final int STORE = 9;
+    private static final int STORE = 9, TEST = 8;
 
     /**
      * The store button joins the title's buttons here rather than in draw(), which belongs to the
@@ -90,7 +95,8 @@ final class TitleScreen extends Screen {
      */
     @Override
     void drawButtons(Gfx c) {
-        btns.add(new Btn(STORE, 110, g.h - 78, 140, 44, "חנות", true, false));
+        btns.add(new Btn(STORE, 188, g.h - 78, 132, 44, "חנות", true, false));
+        btns.add(new Btn(TEST, 40, g.h - 78, 132, 44, "בדיקה", true, false));
         super.drawButtons(c);
     }
 

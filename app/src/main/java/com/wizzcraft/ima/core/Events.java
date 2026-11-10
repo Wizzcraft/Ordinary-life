@@ -18,6 +18,9 @@ final class Events {
                 return Crime.chaseText(g, result);
             case "fight":
                 return Crime.fightText(g, result);
+            case "study.doctor":
+            case "study.dev":
+                return School.outcome(g, id, result);
             default:
                 return result == Mini.MISS ? "הפעם זה לא הלך." : "זה עבר בשלום.";
         }
@@ -31,6 +34,10 @@ final class Events {
                 break;
             case "fight":
                 Crime.fightDone(g, result);
+                break;
+            case "study.doctor":
+            case "study.dev":
+                School.done(g, id, result);
                 break;
             default:
                 backToTown(g);

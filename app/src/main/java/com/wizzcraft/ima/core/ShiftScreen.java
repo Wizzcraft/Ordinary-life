@@ -11,7 +11,7 @@ import java.util.HashMap;
 final class ShiftScreen extends Screen {
     static final int INTRO = 0, PLAY = 1, SHOW = 2, DONE = 3, PAUSED = 4;
     /** Pay for a MISS / OK / PERFECT round, as a share of the round's base pay. */
-    static final float[] RESULT_PAY = {0.4f, 1f, 1.3f};
+    static final float[] RESULT_PAY = Tuning.RESULT_MULT;
     /**
      * Tips, as a share of the round's pay: for every PERFECT in a row (up to STREAK_MAX), and in
      * service jobs for every point of charisma. A MISS earns no tip.
@@ -104,7 +104,7 @@ final class ShiftScreen extends Screen {
         results[round] = result;
         streak = result == Mini.PERFECT ? streak + 1 : 0;
         float roundPay = job.pay * hoursPerRound();
-        int base = Math.round(roundPay * Job.RANK_PAY[rank] * RESULT_PAY[result]);
+        int base = Math.round(roundPay * Job.RANK_PAY[rank] * job.resultPay[result]);
         int tip = result == Mini.MISS ? 0 : Math.round(roundPay
                 * (STREAK_TIP * Math.min(streak, STREAK_MAX) + (job.service ? g.stat(Host.CHA) * CHA_TIP : 0)));
         g.earn(base + tip);

@@ -73,6 +73,11 @@ public final class Sim {
             } else only = new HashSet<>(Arrays.asList(a.split(",")));
         }
         if (pictures) real = new AwtGfx(36, 76, 0.1f);
+        // The real Minis of the build are played first; the engine tests after that run on the cook
+        // and on test Minis, so they stay exact whatever the real ones do.
+        run(only, "minis", Sim::minis);
+        run(only, "school", Sim::school);
+        for (String id : Minis.ORDER) if (!id.equals("cook")) Minis.unregister(id);
         run(only, "unregistered", Sim::unregistered);
         // From here on the alley, the two street events and the waiter are played by test Minis.
         Minis.register("alley", TestVenue::new);
@@ -734,6 +739,183 @@ public final class Sim {
         sheets("h" + (int) height);
     }
 
+    // ================= the real Minis of the build =================
+
+    /** Runs the Mini that is on screen with its own bot until stop says so; false when it never does. */
+    static boolean botUntil(Mini mini, Random r, float skill, int maxFrames, java.util.function.BooleanSupplier playing,
+                            java.util.function.BooleanSupplier stop) {
+        for (int i = 0; i < maxFrames; i++) {
+            if (stop.getAsBoolean()) return true;
+            if (g.hasDialog()) closeDialogs();
+            else if (playing.getAsBoolean()) mini.bot(r, skill);
+            frame();
+        }
+        return stop.getAsBoolean();
+    }
+
+    /**
+     * Every Mini of the build is started and finished by its own bot: from the test list on the
+     * title screen (both screen heights, with the app leaving once in the middle), and then inside
+     * the real game through the screen that hosts it there.
+     */
+    static void minis() {
+        Random r = new Random(11);
+        check(Minis.ORDER.length == 17, "seventeen Minis are in the build");
+        for (String id : Minis.ORDER) check(Minis.create(id) != null, "registered: " + id);
+        for (float height : new float[]{760, 560}) {
+            lh = height;
+            for (int k = 0; k < Minis.ORDER.length; k++) {
+                String id = Minis.ORDER[k];
+                g = new Game();
+                g.rnd.setSeed(100 + k);
+                frame();
+                check(tapLabel("בדיקה") && g.screen instanceof TestMenuScreen, "the title screen opens the test list");
+                frame();
+                Btn entry = null;
+                for (Btn b : g.screen.btns) if (b.id == k) entry = b;
+                check(entry != null && entry.y + entry.h <= lh - 58, "the test list shows " + id);
+                tap(entry);
+                frame();
+                check(g.screen instanceof TestPlayScreen, "test list opens " + id);
+                TestPlayScreen p = (TestPlayScreen) g.screen;
+                String before = g.save();
+                check(tapLabel("קדימה") && p.state == TestPlayScreen.PLAY, id + " starts from its intro card");
+                // The app leaves in the middle of the first round and comes back to the intro card.
+                botUntil(p.mini, r, 0.8f, 40, () -> p.state == TestPlayScreen.PLAY, () -> g.screen != p);
+                if (g.screen == p) {
+                    g.onAppPause();
+                    frame();
+                    check(p.state == TestPlayScreen.INTRO && tapLabel("קדימה"), id + " restarts after the app was away");
+                }
+                if (g.screen != p) {
+                    check(p.rounds == 0 && g.screen instanceof TestMenuScreen, id + ": only a venue is left by its bot");
+                } else if (p.rounds == 0) {
+                    botUntil(p.mini, r, 0.8f, 900, () -> p.state == TestPlayScreen.PLAY, () -> g.screen != p);
+                    if (g.screen == p) check(tapLabel("יציאה"), id + ": the test host has its own way out");
+                    frame();
+                    check(g.screen instanceof TestMenuScreen, id + ": leaving a venue returns to the list");
+                } else {
+                    check(botUntil(p.mini, r, 0.8f, 30 * 240, () -> p.state == TestPlayScreen.PLAY,
+                            () -> p.state == TestPlayScreen.DONE), id + " is played to the end by its bot");
+                    check(tapLabel("חזרה לרשימה") && g.screen instanceof TestMenuScreen, id + ": back to the list");
+                }
+                check(g.save().equals(before) && !g.started, id + ": the test list leaves the save alone");
+            }
+        }
+        lh = 760;
+        // In the real game: every job's shift through ShiftScreen...
+        for (Job j : Job.ALL) {
+            fresh();
+            g.rnd.setSeed(200 + j.id);
+            g.setVar("hired." + j.id, 1);
+            g.setVar("dip." + j.id, 1);
+            g.energy = 100;
+            enter(j.building, startMinute(j));
+            check(tapLabel("להתחיל משמרת: " + j.name(false)), j.mini + ": the shift can be started from its building");
+            check(g.screen instanceof ShiftScreen && ((ShiftScreen) g.screen).mini.getClass() == Minis.create(j.mini).getClass(),
+                    j.mini + ": the shift is played by its own Mini");
+            int money = g.money;
+            ShiftScreen s = playShift(r, 0.8f);
+            check(s != null && g.money > money, j.mini + ": the shift ends and pays");
+            reload();
+            check(tapLabel("המשך"), j.mini + ": the end card closes");
+            closeDialogs();
+            check(g.screen instanceof BuildingScreen, j.mini + ": back in the building");
+        }
+        // ... the two street events through EventScreen ...
+        for (String id : new String[]{"chase", "fight"}) {
+            fresh();
+            g.rnd.setSeed(300);
+            g.screen = EventScreen.open(g, id, 0.4f);
+            check(g.screen != null && tapLabel("קדימה"), id + " opens as an event");
+            EventScreen e = (EventScreen) g.screen;
+            check(botUntil(e.mini, r, 0.8f, 30 * 120, e::playing, () -> e.state == EventScreen.DONE), id + " ends");
+            reload();
+            check(tapLabel("המשך"), id + ": the outcome card closes");
+            closeDialogs();
+            check(!(g.screen instanceof EventScreen), id + ": the game goes on");
+        }
+        // ... and every venue from the menu of its building.
+        for (int i = 0; i < Minis.VENUE_MINI.length; i++) {
+            String id = Minis.VENUE_MINI[i];
+            fresh();
+            g.rnd.setSeed(400 + i);
+            g.money = 2000;
+            City.Building b = City.B[Minis.VENUE_AT[i]];
+            enter(b.id, b.openFrom + 30);
+            Mini named = Minis.create(id);
+            named.attach(g.host);
+            check(tapLabel(named.title()) && g.screen instanceof VenueScreen, id + " is entered from " + b.name);
+            VenueScreen v = (VenueScreen) g.screen;
+            frame();
+            botUntil(v.mini, r, 0.8f, 600, () -> true, () -> g.screen != v);
+            if (g.screen == v) {
+                reload();
+                frames(30);
+                g.back();
+            }
+            for (int n = 0; n < 30 * 120 && !(g.screen instanceof BuildingScreen || g.screen instanceof MapScreen); n++) {
+                if (g.hasDialog()) closeDialogs();
+                else if (g.screen instanceof EventScreen) {
+                    EventScreen e = (EventScreen) g.screen;
+                    if (e.playing()) e.mini.bot(r, 0.8f);
+                    else tapLabel(e.state == EventScreen.INTRO ? "קדימה" : "המשך");
+                }
+                frame();
+            }
+            closeDialogs();
+            check(g.screen instanceof BuildingScreen || g.screen instanceof MapScreen, id + ": the visit ends back in town");
+            check(g.var("gems") == 0, id + " never touches the premium currency");
+        }
+    }
+
+    /** The school: three passed lessons give the diploma, and the diploma gives the profession. */
+    static void school() {
+        Random r = new Random(5);
+        for (int i = 0; i < School.COUNT; i++) {
+            fresh();
+            g.rnd.setSeed(500 + i);
+            g.money = 1000;
+            Job job = Job.byId(School.JOB[i]);
+            enter(City.OFFICE, 8 * 60);
+            check(tapLabel("לבקש עבודה: " + job.name(false)) && !g.hired(job.id), "no profession without a diploma");
+            check(drawn().contains("תעודה"), "the refusal names the diploma");
+            closeDialogs();
+            int lessons = 0;
+            for (int n = 0; n < 12 && !School.graduated(g, i); n++) {
+                g.energy = 100;
+                g.food = 100;
+                g.water = 100;
+                enter(City.SCHOOL, 9 * 60);
+                int money = g.money, passed = School.passed(g, i);
+                float edu = g.stat(Host.EDU), clock = clock();
+                check(tapLabel("שיעור: " + School.NAME[i]) && g.screen instanceof EventScreen, "a lesson opens");
+                check(g.money == money - School.PRICE, "a lesson is paid for at the door");
+                check(tapLabel("קדימה"), "the lesson starts");
+                EventScreen e = (EventScreen) g.screen;
+                check(botUntil(e.mini, r, 1f, 30 * 120, e::playing, () -> e.state == EventScreen.DONE), "the lesson ends");
+                reload();
+                boolean won = ((EventScreen) g.screen).won();
+                check(tapLabel("המשך"), "the lesson's card closes");
+                check(g.stat(Host.EDU) > edu && clock() == clock + School.MINUTES, "a lesson teaches and takes two hours");
+                check(School.passed(g, i) == passed + (won ? 1 : 0), "only a passed lesson counts");
+                closeDialogs();
+                check(g.screen instanceof BuildingScreen, "back in the school");
+                lessons++;
+            }
+            check(School.graduated(g, i) && lessons >= School.LESSONS, "the diploma arrives after " + School.LESSONS + " passed lessons");
+            enter(City.SCHOOL, 9 * 60);
+            check(!hasButton("שיעור: " + School.NAME[i]) && drawn().contains("יש תעודה"), "a graduate is not sold more lessons");
+            enter(City.OFFICE, 8 * 60);
+            check(tapLabel("לבקש עבודה: " + job.name(false)) && g.hired(job.id), "the diploma opens the profession");
+            closeDialogs();
+        }
+        fresh();
+        g.money = School.PRICE - 1;
+        enter(City.SCHOOL, 9 * 60);
+        check(!tapLabel("שיעור: ") && g.screen instanceof BuildingScreen, "no lesson without the money for it");
+    }
+
     // ================= checks before any test Mini is registered =================
 
     static void unregistered() {
@@ -1114,6 +1296,7 @@ public final class Sim {
             fresh();
             String name = j.name(false);
             if (j.needStat != Job.NONE) g.train(j.needStat, j.needValue - g.stat(j.needStat));
+            if (j.profession) g.setVar("dip." + j.id, 1);
             enter(j.building, startMinute(j));
             g.energy = 95;
             check(City.B[j.building].isOpen(g.minute), name + ": the building is open when the shift starts");

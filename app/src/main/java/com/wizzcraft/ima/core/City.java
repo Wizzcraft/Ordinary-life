@@ -8,7 +8,7 @@ final class City {
     static final float ROAD_W = 16;
 
     static final int SCHOOL = 0, CASINO = 1, BAKERY = 2, BAR = 3, RESTAURANT = 4, MARKET = 5, GAS = 6,
-            HOME = 7, ALLEY = 8;
+            HOME = 7, ALLEY = 8, OFFICE = 9;
 
     static final class Building {
         final int id;
@@ -59,6 +59,7 @@ final class City {
             new Building(GAS, "תחנת דלק", "לתחנת הדלק", 198, 272, 104, 46, 250, 330, 0xFFEBC043, 0, 0),
             new Building(HOME, "דירה", "הביתה", 58, 412, 104, 46, 110, 470, 0xFF9AA7BD, 0, 0),
             new Building(ALLEY, "סמטה", "לסמטה", 198, 482, 104, 34, 250, 470, 0xFF4A5261, 22 * 60, 5 * 60),
+            new Building(OFFICE, "בניין משרדים", "לבניין המשרדים", 198, 342, 104, 46, 230, 330, 0xFF7FA0B8, 7 * 60, 20 * 60),
     };
 
     private City() {

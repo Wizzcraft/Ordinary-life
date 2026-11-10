@@ -25,8 +25,9 @@ public final class Game {
     static final int DAYS_PER_MONTH = 10;
     /** City units per game minute. Home to the centre is 2-3 game hours on foot. */
     static final float WALK_SPEED = 3f;
-    static final int RENT = 900, RENT_FINE = 100, START_MONEY = 400;
-    static final int MEAL_PRICE = 30, BOTTLE_PRICE = 8, DINE_PRICE = 45, BAG_MAX = 4, AMBULANCE = 150;
+    static final int RENT = Tuning.HOME_RENT[0], RENT_FINE = Tuning.RENT_FINE, START_MONEY = Tuning.START_MONEY;
+    static final int MEAL_PRICE = Tuning.MEAL_PRICE, BOTTLE_PRICE = Tuning.BOTTLE_PRICE,
+            DINE_PRICE = Tuning.DINE_PRICE, BAG_MAX = Tuning.BAG_MAX, AMBULANCE = Tuning.AMBULANCE;
     /** What the employer's food and drink give back per hour of work, and the energy that hour costs. */
     static final float WORK_FOOD_PER_HOUR = 4, WORK_WATER_PER_HOUR = 5, WORK_ENERGY_PER_HOUR = 6;
     static final float MEAL_FOOD = 45, BOTTLE_WATER = 50, TAP_WATER = 40, SLEEP_PER_HOUR = 11;

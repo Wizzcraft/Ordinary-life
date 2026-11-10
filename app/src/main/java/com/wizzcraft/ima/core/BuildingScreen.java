@@ -17,7 +17,7 @@ final class BuildingScreen extends Screen {
     private static final int EXIT = 99, SLEEP8 = 1, NAP = 2, TAP = 3, STORE = 4, BUY_MEAL = 10, BUY_WATER = 11,
             DINE = 22, BAG_EAT = 30, BAG_DRINK = 31;
     /** Ids of the generated rows: VENUE + index in this building, APPLY / SHIFT + job id. */
-    private static final int VENUE = 300, APPLY = 400, SHIFT = 500;
+    private static final int STUDY = 200, VENUE = 300, APPLY = 400, SHIFT = 500;
     /** Three looks, roomiest first: row height, gap between rows, header height, info text size. */
     private static final float[][] LOOKS = {{50, 8, 78, 13}, {44, 6, 56, 12}, {38, 4, 44, 11.5f}};
 
@@ -84,6 +84,9 @@ final class BuildingScreen extends Screen {
                 info("בתיק: " + Ui.count(g.meals, "ארוחה אחת", "ארוחות") + ", "
                         + Ui.count(g.bottles, "בקבוק אחד", "בקבוקים") + ". נכנסים עד " + Game.BAG_MAX + " מכל סוג.");
                 break;
+            case City.SCHOOL:
+                school();
+                break;
             case City.RESTAURANT:
                 row(DINE, "לאכול כאן · " + Ui.nis(Game.DINE_PRICE), g.money >= Game.DINE_PRICE && g.food < 90, false);
                 break;
@@ -93,12 +96,32 @@ final class BuildingScreen extends Screen {
         if (offered == 0) info(soon(b.id));
     }
 
+    /** The school's programmes: a lesson row for each one still being studied. */
+    private void school() {
+        boolean any = false;
+        for (int i = 0; i < School.COUNT; i++) {
+            if (!School.offered(i)) continue;
+            any = true;
+            if (School.graduated(g, i)) {
+                info("לימודי " + School.NAME[i] + ": יש תעודה. העבודה מחכה בבניין המשרדים.");
+            } else {
+                row(STUDY + i, "שיעור: " + School.NAME[i] + " (" + School.passed(g, i) + " מתוך " + School.LESSONS
+                        + ")", g.money >= School.PRICE, true);
+            }
+        }
+        if (any) {
+            info("שיעור עולה " + Ui.nis(School.PRICE) + " ונמשך שעתיים. " + School.LESSONS
+                    + " שיעורים שעברו בהצלחה נותנים תעודה ומקצוע.");
+        }
+    }
+
     private void jobRows(Job j) {
         String name = j.name(g.female);
         if (!g.hired(j.id)) {
             boolean fits = meets(j);
             row(APPLY + j.id, "לבקש עבודה: " + name, true, fits);
             note(fits ? j.payLine(0) + " · מתחילים " + j.window()
+                    : !diploma(j) ? "דרושה תעודה מהמוסד ללימודים · " + j.payLine(0)
                     : "דרוש: " + Job.STAT_NAMES[j.needStat] + " " + j.needValue + ", יש לך "
                     + (int) g.stat(j.needStat) + " · " + j.payLine(0), fits ? Ui.DIM : Ui.ORANGE);
         } else {
@@ -110,8 +133,12 @@ final class BuildingScreen extends Screen {
         }
     }
 
+    private boolean diploma(Job j) {
+        return !j.profession || g.flag("dip." + j.id);
+    }
+
     private boolean meets(Job j) {
-        return j.needStat == Job.NONE || g.stat(j.needStat) >= j.needValue;
+        return diploma(j) && (j.needStat == Job.NONE || g.stat(j.needStat) >= j.needValue);
     }
 
     /** Why a shift can't start right now, or null if it can. */
@@ -126,6 +153,8 @@ final class BuildingScreen extends Screen {
         switch (id) {
             case City.SCHOOL:
                 return "בקרוב: לימודים למקצועות כמו רופא, עורך דין ומפתח תוכנה.";
+            case City.OFFICE:
+                return "מרפאה וחברת תוכנה. כאן עובדים מי שסיימו ללמוד במוסד הלימודים.";
             case City.CASINO:
                 return "בקרוב: בלאקג'ק, רולטה, מכונות מזל ופוקר.";
             case City.ALLEY:
@@ -243,6 +272,13 @@ final class BuildingScreen extends Screen {
             g.screen = venue;
             return;
         }
+        if (id >= STUDY) {
+            Screen lesson = School.lesson(g, id - STUDY);
+            if (lesson == null) return;
+            g.sfx(Sfx.COIN);
+            g.screen = lesson;
+            return;
+        }
         switch (id) {
             case EXIT:
                 g.sfx(Sfx.TAP);
@@ -300,6 +336,12 @@ final class BuildingScreen extends Screen {
     /** Asking for a job: a clear no with the reason when a stat is too low, otherwise hired on the spot. */
     private void apply(Job j) {
         String name = j.name(g.female);
+        if (!diploma(j)) {
+            g.sfx(Sfx.BAD);
+            g.dialog("עוד לא", "כדי לעבוד כ" + name + " צריך תעודה. לומדים במוסד הלימודים: " + School.LESSONS
+                    + " שיעורים, " + Ui.nis(School.PRICE) + " לשיעור.");
+            return;
+        }
         if (!meets(j)) {
             String stat = Job.STAT_NAMES[j.needStat];
             String how = j.needStat == Host.FIT ? "כושר עולה מהליכה ומעבודה פיזית."

@@ -19,7 +19,27 @@ final class Minis {
         //   venues  "alley" "blackjack" "roulette" "slots" "poker"         (VENUE_MINI below)
         // =====================================================================================
         register("cook", CookMini::new);
+        register("waiter", WaiterMini::new);
+        register("baker", BakerMini::new);
+        register("barman", BarMini::new);
+        register("gas", GasMini::new);
+        register("cashier", CashierMini::new);
+        register("doctor", DoctorMini::new);
+        register("dev", DevMini::new);
+        register("study.doctor", DoctorStudyMini::new);
+        register("study.dev", DevStudyMini::new);
+        register("chase", ChaseMini::new);
+        register("fight", FightMini::new);
+        register("alley", AlleyMini::new);
+        register("blackjack", BlackjackMini::new);
+        register("roulette", RouletteMini::new);
+        register("slots", SlotsMini::new);
+        register("poker", PokerMini::new);
     }
+
+    /** Every Mini of the build in the order the test list shows them: jobs, studies, events, venues. */
+    static final String[] ORDER = {"cook", "waiter", "baker", "barman", "gas", "cashier", "doctor", "dev",
+            "study.doctor", "study.dev", "chase", "fight", "alley", "blackjack", "roulette", "slots", "poker"};
 
     /**
      * Where each venue (an open-ended Mini, rounds() == 0) is entered: building id and Mini id.
@@ -33,6 +53,11 @@ final class Minis {
 
     static void register(String id, Supplier<Mini> factory) {
         ALL.put(id, factory);
+    }
+
+    /** For the test harness: takes a Mini out of the build. */
+    static void unregister(String id) {
+        ALL.remove(id);
     }
 
     static boolean has(String id) {
