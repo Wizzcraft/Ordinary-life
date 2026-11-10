@@ -21,6 +21,7 @@ import os
 import random
 import re
 import statistics
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TUNING = os.path.join(HERE, '..', '..', 'app', 'src', 'main', 'java', 'com', 'wizzcraft', 'ima', 'core',
@@ -159,11 +160,14 @@ class P:
         self.front = 0.0
         self.hours = dict(job=0.0, alley=0.0)
         self.first_miss = False
+        self.favours, self.trust, self.gems = 0, 0.0, 0
+        self.x_value = self.x_month = 0.0
+        self.core_month = 0.0
         self.month_taxable = 0.0
         self.log = []
         self.ev = dict(collapse=0, arrest=0, scuffle=0, missed=0, evict=0, bailout=0, shifts=0,
                        sessions=0, courses=0, outs=0, alley=0, casino=0, chase=0)
-        self.inc = dict(wage=0, tips=0, pro=0, alley=0, casino=0)
+        self.inc = dict(wage=0, tips=0, pro=0, alley=0, casino=0, extras=0)
         self.spend = dict(rent=0, bills=0, food=0, transport=0, school=0, fines=0, sinks=0, out=0, ambulance=0,
                           move=0, hostel=0, tax=0)
         self.monthly = []
@@ -198,6 +202,7 @@ class P:
         self.month_income += amount
         if cat in ('wage', 'tips', 'pro'):
             self.month_taxable += amount
+            self.core_month += amount
         if self.debt > 0 and cat in ('wage', 'tips', 'pro'):
             g = min(self.debt, amount * T.DEBT_GARNISH)
             self.debt -= g
@@ -208,6 +213,7 @@ class P:
         self.month_income += amount
         if cat in ('wage', 'tips', 'pro'):
             self.month_taxable += amount
+            self.core_month += amount
 
     # ---- needs
     def eat_drink(self):
@@ -321,6 +327,9 @@ class P:
         self.month_taxable = 0
         if tax:
             self.pay(tax, 'tax', debt=True)
+        while self.home >= 0 and self.money < due and self.favours > 0:
+            self.favours -= 1  # a favour buys a week's grace: worth FAVOUR_RENT_GRACE off the rent
+            due -= T.FAVOUR_RENT_GRACE
         if self.home >= 0:
             if self.money >= due:
                 self.pay(due, 'rent')
@@ -361,8 +370,10 @@ class P:
         self.monthly.append(dict(month=month, money=self.money - self.debt, debt=self.debt, income=self.month_income, energy=self.energy,
                                  home=self.home, rank=self.best_rank(), edu=self.edu, cha=self.cha, fit=self.fit,
                                  pro=self.pro, sessions=self.sessions, heat=self.heat, record=self.record,
-                                 arrests=self.arrests, hourly=self.hourly_now()))
+                                 arrests=self.arrests, hourly=self.hourly_now(),
+                                 xshare=self.x_month / self.core_month if self.core_month else 0))
         self.month_income = 0
+        self.x_month = self.core_month = 0.0
 
     def best_rank(self):
         if self.pro is not None:
@@ -413,6 +424,8 @@ class P:
         rounds, total, score = 8, 0.0, 0
         mult = T.PRO_RESULT_MULT if pro else T.RESULT_MULT
         erate = 5.0 if pro else T.JOB_ENERGY[j]
+        offers = self.roll_extras() if (self.s.extras and not pro) else []
+        early = T.X_AMOUNT[T.X_EARLY] if T.X_EARLY in offers else 0
         for _ in range(rounds):
             eff = self.s.skill - 0.05 * rank - (T.TIRED_DIFFICULTY if self.energy < T.TIRED_ENERGY else 0)
             pm, po, _pp = score_dist(eff)
@@ -420,14 +433,13 @@ class P:
             res = 0 if u < pm else 1 if u < pm + po else 2
             score += res
             total += mult[res]
-            self.advance(T.SHIFT_HOURS * 60 / rounds, T.A_WORK, energy_rate=erate)
+            self.advance((T.SHIFT_HOURS * 60 - early) / rounds, T.A_WORK, energy_rate=erate)
         avg = total / rounds
         hourly = (T.PRO_PAY[self.pro] if pro else T.JOB_PAY[j]) * T.RANK_PAY[rank]
         wage = hourly * T.SHIFT_HOURS * avg
         self.earn(wage, 'pro' if pro else 'wage')
-        if not pro and self.s.extras:
-            # Optional extras inside the job: whatever the player squeezes out, capped per day.
-            self.earn(wage * min(T.EXTRAS_DAILY_BONUS_CAP, self.s.extras), 'wage')
+        if offers:
+            self.take_extras(offers, wage, hourly, erate, j)
         if not pro and T.JOB_TIPS[j]:
             self.earn(T.JOB_PAY[j] * T.SHIFT_HOURS * avg * (T.TIP_BASE + self.cha * T.TIP_PER_CHA), 'tips')
         gain = (T.XP_BASE + T.XP_PER_SCORE * score / rounds) * (1 + self.edu * T.EDU_XP_BONUS)
@@ -444,6 +456,52 @@ class P:
                 self.cha += inc
         self.ev['shifts'] += 1
         return True
+
+    def roll_extras(self):
+        """Which optional extras this shift offers, kept under the daily money-equivalent cap."""
+        kinds = [k for k in (T.X_TIP, T.X_EARLY, T.X_MEAL, T.X_ENERGY, T.X_XP, T.X_FAVOUR, T.X_TRUST,
+                             T.X_OVERTIME) if self.r.random() < T.X_CHANCE[k]]
+        return kinds
+
+    def take_extras(self, offers, wage, hourly, erate, j):
+        budget = wage * T.X_DAY_CAP  # money-equivalent cap for the day
+        for k in offers:
+            amount = T.X_AMOUNT[k]
+            value = amount * T.X_VALUE[k]
+            if k == T.X_OVERTIME:
+                if self.energy < T.OVERTIME_MIN_ENERGY:
+                    continue
+                # Overtime pays well and costs energy (and so tomorrow's sleep): its value is the
+                # premium over normal pay, minus the energy, minus the hours.
+                pay = hourly * amount / 60 * T.OVERTIME_PAY
+                value = pay - erate * amount / 60 * T.X_VALUE[T.X_ENERGY] - amount * T.X_VALUE[T.X_EARLY]
+                if value > budget:
+                    continue
+                self.advance(amount, T.A_WORK, energy_rate=erate)
+                self.earn(pay, 'extras')
+            elif value > budget:
+                continue
+            elif k == T.X_TIP:
+                self.earn(amount, 'extras')
+            elif k == T.X_MEAL:
+                if self.meals < self.bag:
+                    self.meals += 1
+                else:
+                    self.food = min(100, self.food + T.MEAL_FOOD)
+            elif k == T.X_ENERGY:
+                self.energy = min(100, self.energy + amount)
+            elif k == T.X_XP:
+                before = self.rank(self.xp[j])
+                self.xp[j] += amount
+                if self.rank(self.xp[j]) > before:
+                    self.gems += T.X_AMOUNT[T.X_GEMS]
+            elif k == T.X_FAVOUR:
+                self.favours += 1
+            elif k == T.X_TRUST:
+                self.trust += amount
+            budget -= max(0.0, value)
+            self.x_value += value
+            self.x_month += value
 
     def shop(self, n):
         if self.money < T.MEAL_PRICE:
@@ -705,7 +763,8 @@ class Strategy:
     visit_prep = True
     sell_at, buy_at, bet_frac, sell_gain = 1.15, 0.8, 0.1, 1.3
     use_front = False
-    extras = 0.0  # share of shift pay chased in optional job extras (capped by Tuning)
+    extras = False  # True: takes every optional extra a shift offers
+    seed_name = None  # share another strategy's seeds for a paired comparison
     rest_below = 55
 
     def fire_sale(self, p):
@@ -821,7 +880,6 @@ class Unskilled(Strategy):
 class Steady(Strategy):
     """Competent cook. Bicycle when it is affordable, mid flat when the landlord says yes."""
     name = 'steady'
-    extras = 0.05
 
     def day(self, p):
         self.housekeeping(p)
@@ -833,16 +891,21 @@ class Steady(Strategy):
         self.work_day(p)
 
 
+class SteadyExtras(Steady):
+    """The steady worker, same seeds, but takes every optional extra (overtime included)."""
+    name = 'steady+x'
+    extras = True
+    seed_name = b'steady'
+
+
 class Expert(Steady):
     name = 'expert'
     skill = 1.0
-    extras = 0.2  # tries every side mode; the cap holds it to +10%
 
 
 class Hopper(Strategy):
     """Chases the best hourly rate: trains charisma with evenings out, moves cashier -> waiter -> barman."""
     name = 'hopper'
-    extras = 0.05
     bus = True
 
     def best_job(self, p):
@@ -969,7 +1032,7 @@ class Gambler(Strategy):
         self.work_day(p, extra)
 
 
-STRATS = [Careless, Comeback, Unskilled, Steady, Expert, Hopper, Student, StudentLawyer, Trader, CarefulTrader, Gambler]
+STRATS = [Careless, Comeback, Unskilled, Steady, SteadyExtras, Expert, Hopper, Student, StudentLawyer, Trader, CarefulTrader, Gambler]
 
 
 # ---------------------------------------------------------------- reporting
@@ -997,7 +1060,7 @@ def main():
     for S in strats:
         runs = []
         for i in range(a.runs):
-            p = P(S(), a.seed * 100003 + i * 7919 + hash(S.name) % 1000)
+            p = P(S(), a.seed * 100003 + i * 7919 + zlib.crc32(S.seed_name or S.name.encode()) % 1000)
             p.run(verbose=a.verbose and i == 0)
             runs.append(p)
         results[S.name] = runs
@@ -1082,6 +1145,20 @@ def main():
         if ah:
             line += '   alley ₪%5.1f/h over %4.0f h  (x%.1f)' % (aw / ah, ah, (aw / ah) / (jw / jh))
         print(line)
+
+    xs = [n for n in results if results[n][0].s.extras]
+    if xs:
+        print('\n== OPTIONAL EXTRAS (money-equivalent per month as a share of core pay; band %.0f-%.0f%%) ==' % (
+            100 * T.X_MONTH_BAND_MIN, 100 * T.X_MONTH_BAND_MAX))
+        for name in xs:
+            runs = results[name]
+            share = [row['xshare'] for r in runs for row in r.monthly]
+            print('%-10s median %.1f%%  p10 %.1f%%  p90 %.1f%%   per year: value ₪%d, extras cash ₪%d, favours unspent %.1f, '
+                  'trust +%.1f, gems %.1f' % (name, 100 * statistics.median(share), 100 * pct(share, 0.1),
+                                             100 * pct(share, 0.9), statistics.mean(r.x_value for r in runs),
+                                             statistics.mean(r.inc['extras'] for r in runs),
+                                             statistics.mean(r.favours for r in runs),
+                                             statistics.mean(r.trust for r in runs), statistics.mean(r.gems for r in runs)))
 
     if 'trader' in results:
         runs = results['trader']

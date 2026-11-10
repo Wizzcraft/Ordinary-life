@@ -85,12 +85,38 @@ final class Tuning {
     static final int[] JOB_TRAINS = {FIT, CHA, FIT, CHA, FIT, CHA, FIT, FIT, CHA, CHA};
     /** 1 = service job with tips. */
     static final int[] JOB_TIPS = {0, 1, 0, 1, 0, 0, 0, 0, 0, 0};
+
+    // ---- optional extras inside a job ----
+    // Each job has ONE core minigame that earns the wage. Extras (side orders, a regular's request,
+    // a mess to clean, overtime) are optional and pay in several currencies. Every currency has a
+    // shekel value so they can be balanced against each other; docs/DESIGN.md "Optional extras".
+    // Kinds: 0 tip, 1 leave early, 2 free meal, 3 energy, 4 promotion XP, 5 favour, 6 mom's trust,
+    // 7 premium currency (milestones only), 8 overtime.
+    static final int X_TIP = 0, X_EARLY = 1, X_MEAL = 2, X_ENERGY = 3, X_XP = 4, X_FAVOUR = 5, X_TRUST = 6,
+            X_GEMS = 7, X_OVERTIME = 8;
+    /** Chance per shift that each extra is offered (gems: per rank-up instead). */
+    static final float[] X_CHANCE = {0.5f, 0.1f, 0.2f, 0.1f, 0.4f, 0.03f, 0.1f, 1f, 0.2f};
+    /** Amount: ₪, minutes off the shift, meals, energy, XP, favours, trust, gems, overtime minutes. */
+    static final float[] X_AMOUNT = {8f, 60f, 1f, 10f, 5f, 1f, 1f, 1f, 120f};
     /**
-     * Each job has ONE core minigame that earns the wage. Optional extras inside a job (side modes,
-     * events, bonus orders) are never required, and all of them together add at most this share of
-     * that day's shift pay.
+     * Shekel value of one unit, for balancing only: an hour of the player's time is worth about
+     * ₪15 (what a shift pays per hour including the commute), 10 energy is an hour of far-flat sleep,
+     * an XP point brings rank 1 (+20% pay) closer, a favour covers about ₪100 of trouble, gems are
+     * cosmetic-only and count as 0 so they can never buy progress.
      */
-    static final float EXTRAS_DAILY_BONUS_CAP = 0.10f;
+    static final float[] X_VALUE = {1f, 0.25f, 18f, 1.5f, 2f, 100f, 10f, 0f, 0f};
+    /** Overtime: extra pay rate on the overtime minutes; offered only with energy above the minimum. */
+    static final float OVERTIME_PAY = 1.5f;
+    static final float OVERTIME_MIN_ENERGY = 50f;
+    /** What a favour can be redeemed for: covering a missed shift, or a week's grace on the rent. */
+    static final int FAVOUR_RENT_GRACE = 100;
+    /** Money-equivalent of one day's extras may not exceed this share of that shift's core pay. */
+    static final float X_DAY_CAP = 0.25f;
+    /**
+     * Target band for a month of taking every extra, as a share of the month's core pay: felt
+     * (a meal and a half a week, a rank a few days sooner) but never decisive (less than one rent).
+     */
+    static final float X_MONTH_BAND_MIN = 0.06f, X_MONTH_BAND_MAX = 0.12f;
     /** Tips as a fraction of the shift's base pay: TIP_BASE + cha * TIP_PER_CHA, times the round multiplier. */
     static final float TIP_BASE = 0.10f, TIP_PER_CHA = 0.004f;
     /** Pay multiplier for a MISS / OK / PERFECT round. */
