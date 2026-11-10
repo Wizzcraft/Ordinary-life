@@ -1,10 +1,15 @@
 package com.wizzcraft.ima.core;
 
-/** The city map: roads, buildings and walking paths. Units are "city units" (360 x 520). */
+/**
+ * The city map: roads, buildings and walking paths. Units are "city units" (360 x 550).
+ * Every building stands just north of its street with its door in the front (south) wall, because the
+ * map is drawn in a 3/4 view where only front walls show. A building's rectangle is its whole drawn
+ * block (roof plus front wall), which is also what a tap hits.
+ */
 final class City {
-    static final float W = 360, H = 520;
-    static final float[] ROADS_H = {60, 190, 330, 470};
-    static final float[] ROADS_V = {40, 180, 320};
+    static final float W = 360, H = 550;
+    static final float[] ROADS_H = {120, 255, 390, 530};
+    static final float[] ROADS_V = {40, 176, 302};
     static final float ROAD_W = 16;
 
     static final int SCHOOL = 0, CASINO = 1, BAKERY = 2, BAR = 3, RESTAURANT = 4, MARKET = 5, GAS = 6,
@@ -50,15 +55,15 @@ final class City {
 
     /** Index in this array == building id. Doors always sit on a horizontal road. */
     static final Building[] B = {
-            new Building(SCHOOL, "מוסד לימודים", "למוסד הלימודים", 58, 72, 104, 46, 110, 60, 0xFF6C8CE0, 8 * 60, 22 * 60),
-            new Building(CASINO, "קזינו", "לקזינו", 198, 72, 104, 46, 250, 60, 0xFFC264D9, 20 * 60, 4 * 60),
-            new Building(BAKERY, "מאפייה", "למאפייה", 58, 132, 104, 46, 90, 190, 0xFFDDA869, 5 * 60, 14 * 60),
-            new Building(BAR, "בר", "לבר", 198, 132, 104, 46, 270, 190, 0xFF45B3AB, 18 * 60, 3 * 60),
-            new Building(RESTAURANT, "מסעדה", "למסעדה", 58, 202, 104, 46, 130, 190, 0xFFE8706A, 8 * 60, 24 * 60),
-            new Building(MARKET, "סופר", "לסופר", 198, 202, 104, 46, 230, 190, 0xFF7CCB57, 7 * 60, 22 * 60),
-            new Building(GAS, "תחנת דלק", "לתחנת הדלק", 198, 272, 104, 46, 250, 330, 0xFFEBC043, 0, 0),
-            new Building(HOME, "דירה", "הביתה", 58, 412, 104, 46, 110, 470, 0xFF9AA7BD, 0, 0),
-            new Building(ALLEY, "סמטה", "לסמטה", 198, 482, 104, 34, 250, 470, 0xFF4A5261, 22 * 60, 5 * 60),
+            new Building(SCHOOL, "מוסד לימודים", "למוסד הלימודים", 54, 44, 108, 61, 108, 120, 0xFF6C8CE0, 8 * 60, 22 * 60),
+            new Building(CASINO, "קזינו", "לקזינו", 190, 46, 98, 59, 244, 120, 0xFFC264D9, 20 * 60, 4 * 60),
+            new Building(BAKERY, "מאפייה", "למאפייה", 56, 318, 96, 57, 92, 390, 0xFFDDA869, 5 * 60, 14 * 60),
+            new Building(BAR, "בר", "לבר", 192, 190, 88, 50, 262, 255, 0xFF45B3AB, 18 * 60, 3 * 60),
+            new Building(RESTAURANT, "מסעדה", "למסעדה", 54, 186, 108, 54, 112, 255, 0xFFE8706A, 8 * 60, 24 * 60),
+            new Building(MARKET, "סופר", "לסופר", 190, 322, 98, 53, 232, 390, 0xFF7CCB57, 7 * 60, 22 * 60),
+            new Building(GAS, "תחנת דלק", "לתחנת הדלק", 190, 460, 98, 55, 270, 530, 0xFFEBC043, 0, 0),
+            new Building(HOME, "דירה", "הביתה", 62, 418, 88, 97, 108, 530, 0xFF9AA7BD, 0, 0),
+            new Building(ALLEY, "סמטה", "לסמטה", 316, 440, 42, 75, 336, 530, 0xFF4A5261, 22 * 60, 5 * 60),
     };
 
     private City() {

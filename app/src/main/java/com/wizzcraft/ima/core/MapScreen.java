@@ -12,6 +12,8 @@ final class MapScreen extends Screen {
     private float t;
     /** City-to-screen transform, refreshed on every draw. */
     private float s = 1, ox, oy;
+    private final CityArt art = new CityArt();
+    private final float[] mark = new float[6];
 
     MapScreen(Game g) {
         super(g);
@@ -99,48 +101,27 @@ final class MapScreen extends Screen {
     @Override
     void draw(Gfx c) {
         layout();
-        float h = g.h;
+        float h = g.h, top = Game.HUD_H, bottom = h - BAR_H;
         c.fillRect(0, 0, Game.W, h, Ui.BG);
-        c.fillRect(0, Game.HUD_H, Game.W, h - Game.HUD_H - BAR_H, 0xFF24312A);
+        art.begin(s, ox, oy, g.minute, t);
+        art.ground(c, top, bottom);
+        art.scene(c, top, bottom);
+        for (City.Building b : City.B) drawBuilding(c, b);
 
-        // Roads.
-        int road = 0xFF3B434F, mark = 0xFF596372;
-        float x0 = City.ROADS_V[0] - City.ROAD_W / 2, x1 = City.ROADS_V[City.ROADS_V.length - 1] + City.ROAD_W / 2;
-        float y0 = City.ROADS_H[0] - City.ROAD_W / 2, y1 = City.ROADS_H[City.ROADS_H.length - 1] + City.ROAD_W / 2;
-        for (float ry : City.ROADS_H) {
-            c.fillRect(ox + x0 * s, oy + (ry - City.ROAD_W / 2) * s, (x1 - x0) * s, City.ROAD_W * s, road);
-        }
-        for (float rx : City.ROADS_V) {
-            c.fillRect(ox + (rx - City.ROAD_W / 2) * s, oy + y0 * s, City.ROAD_W * s, (y1 - y0) * s, road);
-        }
-        for (float ry : City.ROADS_H) {
-            for (float dx = x0 + 14; dx < x1 - 10; dx += 22) {
-                c.fillRect(ox + dx * s, oy + (ry - 0.7f) * s, 9 * s, 1.4f * s, mark);
-            }
-        }
-
-        // Remaining path.
-        if (path != null) {
+        boolean walking = path != null;
+        float night = art.darkness();
+        // Remaining path: a dark underlay keeps the gold line readable on asphalt, sidewalk and grass.
+        if (walking) {
             float lx = g.px, ly = g.py;
             for (int i = pi; i + 1 < path.length; i += 2) {
-                c.line(ox + lx * s, oy + ly * s, ox + path[i] * s, oy + path[i + 1] * s, 2.2f * s, 0x99FFC857);
+                float x0 = ox + lx * s, y0 = oy + ly * s, x1 = ox + path[i] * s, y1 = oy + path[i + 1] * s;
+                c.line(x0, y0, x1, y1, 4.4f * s, 0x70101418);
+                c.line(x0, y0, x1, y1, 2.2f * s, night > 0.5f ? 0xFFFFD36A : 0xEEFFC857);
                 lx = path[i];
                 ly = path[i + 1];
             }
         }
-
-        for (City.Building b : City.B) drawBuilding(c, b);
-
-        boolean walking = path != null;
-        float sx = ox + g.px * s, sy = oy + g.py * s;
-        c.fillCircle(sx, sy + 3.5f * s, 5.5f * s, 0x55000000);
-        Ui.person(c, sx, sy + 4 * s, 1.4f * s, g.female, t, walking, Ui.ACCENT);
-
-        float n = night(g.minute);
-        if (n > 0) {
-            int a = (int) (n * 110);
-            c.fillRect(0, Game.HUD_H, Game.W, h - Game.HUD_H - BAR_H, (a << 24) | 0x060A24);
-        }
+        drawPlayer(c, walking);
 
         // Status strip.
         String status;
@@ -154,7 +135,7 @@ final class MapScreen extends Screen {
         } else {
             status = "לוחצים על בניין כדי ללכת אליו";
         }
-        c.fillRect(0, Game.HUD_H, Game.W, 24, 0x99000000);
+        c.fillRect(0, Game.HUD_H, Game.W, 24, 0xB00E1218);
         c.text(status, Game.W / 2, Game.HUD_H + 17, 12, Ui.INK, Gfx.CENTER);
 
         g.drawHud(c);
@@ -169,23 +150,40 @@ final class MapScreen extends Screen {
         drawButtons(c);
     }
 
+    /** The player: a ground ring, the figure, and a bobbing marker above the head. */
+    private void drawPlayer(Gfx c, boolean walking) {
+        float sx = ox + g.px * s, sy = oy + g.py * s;
+        float pulse = 0.5f + 0.5f * (float) Math.sin(t * 4);
+        c.fillRoundRect(sx - 8 * s, sy - 3.5f * s, 16 * s, 7 * s, 3.5f * s, 0x66000000);
+        c.strokeRoundRect(sx - (8 + pulse * 2) * s, sy - (3.6f + pulse) * s, (16 + pulse * 4) * s, (7.2f + pulse * 2) * s,
+                (3.6f + pulse) * s, 1.4f * s, Ui.ACCENT);
+        Ui.person(c, sx, sy + 1 * s, 1.15f * s, g.female, t, walking, Ui.ACCENT);
+        float my = sy - 33 * s - pulse * 2.5f * s;
+        mark[0] = sx - 5 * s;
+        mark[1] = my - 4 * s;
+        mark[2] = sx + 5 * s;
+        mark[3] = my - 4 * s;
+        mark[4] = sx;
+        mark[5] = my + 3.5f * s;
+        c.fillPoly(mark, 0xCC101418);
+        mark[0] = sx - 3.4f * s;
+        mark[1] = my - 2.8f * s;
+        mark[2] = sx + 3.4f * s;
+        mark[3] = my - 2.8f * s;
+        mark[4] = sx;
+        mark[5] = my + 1.8f * s;
+        c.fillPoly(mark, Ui.ACCENT);
+    }
+
+    /** The cue over a building's art: a pulsing outline and a ring on its doorstep when it is the destination. */
     private void drawBuilding(Gfx c, City.Building b) {
+        if (target != b.id && !(g.at == b.id && path == null)) return;
         float x = ox + b.x * s, y = oy + b.y * s, w = b.w * s, hh = b.h * s;
-        boolean open = b.isOpen(g.minute);
-        int col = open ? b.color : Ui.darken(b.color, 0.55f);
-        c.fillRect(x + 3 * s, y + 3 * s, w, hh, 0x66000000);
-        c.fillRect(x, y, w, hh, col);
-        // Roof seen from above: a lighter ridge polygon.
-        c.fillPoly(new float[]{x + 6 * s, y + 5 * s, x + w - 6 * s, y + 5 * s, x + w - 14 * s, y + hh / 2,
-                x + 14 * s, y + hh / 2}, 0x22FFFFFF);
-        boolean doorBelow = b.doorY > b.y;
-        float dx = ox + b.doorX * s;
-        c.fillRect(dx - 5 * s, doorBelow ? y + hh - 7 * s : y, 10 * s, 7 * s, 0xFF151A21);
-        int ink = Ui.isDark(col) ? Ui.INK : Ui.DARK_INK;
-        c.text(b.name, x + w / 2, y + hh / 2 + 4.5f * s, 12.5f * s, ink, Gfx.CENTER);
-        if (target == b.id || (g.at == b.id && path == null)) {
-            c.strokeRoundRect(x - 3 * s, y - 3 * s, w + 6 * s, hh + 6 * s, 4 * s, 2 * s, Ui.ACCENT);
-        }
+        float pulse = 0.5f + 0.5f * (float) Math.sin(t * 5);
+        c.strokeRoundRect(x - 3 * s, y - 3 * s, w + 6 * s, hh + 6 * s, 5 * s, 3.4f * s, 0x66101418);
+        c.strokeRoundRect(x - 3 * s, y - 3 * s, w + 6 * s, hh + 6 * s, 5 * s, (1.6f + pulse) * s, Ui.ACCENT);
+        float dx = ox + b.doorX * s, dy = oy + b.doorY * s, r = (5 + pulse * 2) * s;
+        c.strokeRoundRect(dx - r, dy - r * 0.6f, r * 2, r * 1.2f, r * 0.6f, 1.6f * s, Ui.ACCENT);
     }
 
     @Override
